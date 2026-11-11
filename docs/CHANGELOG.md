@@ -34,4 +34,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Default owner resolver (Doctrine, `owner.class`) and status (`security.user_checker`); DDD hosts plug their own.
   - Commands `nowo:api-token:issue` (prints the secret once) and `nowo:api-token:purge-expired`.
   - Events `ApiTokenIssuedEvent`, `ApiTokenRevokedEvent`, `ApiTokenUsedEvent` (ids and value objects only).
+  - `Grants` keeps modules in key order, so a stored grant reads back identically on MySQL (which reorders JSON keys), PostgreSQL and SQLite.
   - Runtime dependencies: `doctrine/dbal` ^4, `doctrine/orm` ^3.3, `symfony/{clock,console,event-dispatcher,security-core,uid}`, `psr/{clock,event-dispatcher,log}`. DoctrineBundle is required at runtime once enabled.

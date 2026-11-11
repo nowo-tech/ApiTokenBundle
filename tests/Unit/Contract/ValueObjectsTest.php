@@ -92,7 +92,7 @@ final class ValueObjectsTest extends TestCase
     {
         $grants = new Grants(['tasks' => 'read', 'mcp' => 'on'], ['mcp' => ['destructive', 'destructive'], 'wiki' => []]);
 
-        self::assertSame(['tasks' => 'read', 'mcp' => 'on'], $grants->levels);
+        self::assertSame(['mcp' => 'on', 'tasks' => 'read'], $grants->levels, 'canonical module-key order');
         self::assertSame(['mcp' => ['destructive']], $grants->flags);
         self::assertSame('read', $grants->level('tasks'));
         self::assertNull($grants->level('wiki'));

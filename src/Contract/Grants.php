@@ -11,6 +11,9 @@ use function array_values;
 use function in_array;
 use function is_array;
 use function is_string;
+use function ksort;
+
+use const SORT_STRING;
 
 /**
  * What a token may do, per module: at most one level per module plus ticked flags. No grant = no access to the module.
@@ -26,6 +29,9 @@ final readonly class Grants
     public array $flags;
 
     /**
+     * Levels and flags are kept in module-key order, so a stored and re-read value is identical on every database
+     * (MySQL reorders JSON object keys).
+     *
      * @param array<string, string> $levels module => level
      * @param array<string, list<string>> $flags module => ticked flags
      *
@@ -54,6 +60,8 @@ final readonly class Grants
                 $normalisedFlags[$module] = array_values(array_unique($moduleFlags));
             }
         }
+        ksort($normalisedLevels, SORT_STRING);
+        ksort($normalisedFlags, SORT_STRING);
         $this->levels = $normalisedLevels;
         $this->flags  = $normalisedFlags;
     }

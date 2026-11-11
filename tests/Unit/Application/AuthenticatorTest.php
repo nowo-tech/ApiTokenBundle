@@ -35,7 +35,7 @@ final class AuthenticatorTest extends ServiceTestCase
         self::assertInstanceOf(ApiTokenPrincipal::class, $principal);
         self::assertTrue($principal->owner->equals($owner));
         self::assertSame($this->users['user:42'], $principal->user);
-        self::assertSame(['tasks' => 'tasks', 'mcp' => 'on'], $principal->grants->levels);
+        self::assertSame(['mcp' => 'on', 'tasks' => 'tasks'], $principal->grants->levels);
         self::assertTrue($principal->grants->hasFlag('mcp', 'destructive'));
         self::assertSame('CI', $principal->tokenName);
         self::assertSame($issued->token->id->value, $principal->tokenId->value);

@@ -290,7 +290,8 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         self::assertSame(['tasks' => 'read'], $principal->grants->levels);
         self::assertSame([], $principal->grants->flags);
 
-        $this->connection()->update($this->table(), ['grants' => 'not json', 'reach_everything' => 1, 'reach' => '["bad entry"]'], ['id' => $issued->token->id->value], ['reach_everything' => Types::BOOLEAN]);
+        // Valid JSON of the wrong shape (MySQL and PostgreSQL refuse invalid JSON text; the unit suite covers it).
+        $this->connection()->update($this->table(), ['grants' => '"damaged"', 'reach_everything' => 1, 'reach' => '["bad entry"]'], ['id' => $issued->token->id->value], ['reach_everything' => Types::BOOLEAN]);
         $principal = $this->authenticator()->authenticate($issued->secret);
         self::assertInstanceOf(ApiTokenPrincipal::class, $principal);
         self::assertTrue($principal->grants->isEmpty());

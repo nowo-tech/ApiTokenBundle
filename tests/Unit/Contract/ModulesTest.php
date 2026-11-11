@@ -113,7 +113,7 @@ final class ModulesTest extends TestCase
         );
 
         $narrowed = $registry->narrow($stored);
-        self::assertSame(['tasks' => 'read', 'mcp' => 'on', 'agent' => 'on'], $narrowed->levels);
+        self::assertSame(['agent' => 'on', 'mcp' => 'on', 'tasks' => 'read'], $narrowed->levels);
         self::assertSame(['mcp' => ['destructive']], $narrowed->flags);
 
         $withoutTasks = $registry->narrow($stored, ['wiki', 'mcp', 'agent']);
