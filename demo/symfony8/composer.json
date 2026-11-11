@@ -57,5 +57,17 @@
                 "symlink": true
             }
         }
-    ]
+    ],
+    "require-dev": {
+        "nowo-tech/hot-reload-bundle": "^1.4",
+        "nowo-tech/twig-inspector-bundle": "^1.0",
+        "symfony/debug-bundle": "8.1.*",
+        "symfony/web-profiler-bundle": "8.1.*"
+    },
+    "extra": {
+        "symfony": {
+            "allow-contrib": false,
+            "require": "8.1.*"
+        }
+    }
 }

@@ -1,25 +1,34 @@
 # API Token Bundle
 
-[![CI](https://github.com/nowo-tech/ApiTokenBundle/actions/workflows/ci.yml/badge.svg)](https://github.com/nowo-tech/ApiTokenBundle/actions/workflows/ci.yml) [![Packagist Version](https://img.shields.io/packagist/v/nowo-tech/api-token-bundle.svg?style=flat)](https://packagist.org/packages/nowo-tech/api-token-bundle) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php)](https://php.net) [![Symfony](https://img.shields.io/badge/Symfony-7.4%20%7C%208.0%20%7C%208.1%2B-000000?logo=symfony)](https://symfony.com) [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](#tests-and-coverage)
+[![CI](https://github.com/nowo-tech/ApiTokenBundle/actions/workflows/ci.yml/badge.svg)](https://github.com/nowo-tech/ApiTokenBundle/actions/workflows/ci.yml) [![Packagist Version](https://img.shields.io/packagist/v/nowo-tech/api-token-bundle.svg?style=flat)](https://packagist.org/packages/nowo-tech/api-token-bundle) [![Packagist Downloads](https://img.shields.io/packagist/dt/nowo-tech/api-token-bundle.svg)](https://packagist.org/packages/nowo-tech/api-token-bundle) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php)](https://php.net) [![Symfony](https://img.shields.io/badge/Symfony-7.4%20%7C%208.0%20%7C%208.1%2B-000000?logo=symfony)](https://symfony.com) [![GitHub stars](https://img.shields.io/github/stars/nowo-tech/ApiTokenBundle.svg?style=social&label=Star)](https://github.com/nowo-tech/ApiTokenBundle) [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](#tests-and-coverage)
+
+> ⭐ **Found this useful?** Install it from [Packagist](https://packagist.org/packages/nowo-tech/api-token-bundle) and give it a star on [GitHub](https://github.com/nowo-tech/ApiTokenBundle): it helps us maintain and improve the project.
 
 **Personal API tokens for Symfony: hashed lookup tokens with per-module grants, a tenant reach, mandatory expiry, revocation, rate limits and audit events, one Bearer authenticator for every API and a UiKit account and operator UI.**
-
-> 🚧 **Status: S0 scaffold, no release yet.** The package is built slice by slice from its design contract
-> ([docs/CONTRACT.md](docs/CONTRACT.md), 221-A). S0 ships the bundle class, the strict configuration tree and every
-> quality gate; the features below land with the slices in [docs/ROADMAP.md](docs/ROADMAP.md).
-
-> 📋 **Compatible with Symfony 7.4, 8.0 and 8.1** · PHP 8.2+ (Symfony 8.x requires PHP 8.4+)
-
-![FrankenPHP Friendly Worker Mode](docs/images/frankenphp-friendly.png)
-
-This bundle is built for **FrankenPHP worker mode with the kernel kept alive and not reset between requests**: no
-request state in services, a worker test (one kernel, 2,000 requests) from the first slice.
 
 **Standard Symfony by default, DDD / hexagonal opt-in:** zero configuration in a standard project; public ports are
 interfaces and value objects, bundle-owned tables are mapped in XML and referenced by id, the bundle never flushes your
 EntityManager.
 
-## Features (planned, see the roadmap)
+> 🚧 **Status: S1 core, first tag 0.1.0 pending its security audit.** The package is built slice by slice from its
+> design contract ([docs/CONTRACT.md](docs/CONTRACT.md), 221-A). S1 ships the token store, format and hash, the issuer,
+> revoker, query and authenticator services, the module registry and the `issue` / `purge-expired` commands for
+> standard and DDD hosts; the firewall, pages, bridges and HTTP API land with the next slices in
+> [docs/ROADMAP.md](docs/ROADMAP.md).
+
+> 📋 **Compatible with Symfony 7.4, 8.0 and 8.1** · PHP 8.2+ (Symfony 8.x requires PHP 8.4+)
+
+![FrankenPHP Friendly Worker Mode](docs/images/frankenphp-friendly.png)
+
+This bundle is **FrankenPHP worker mode friendly**.
+
+## Features
+
+S1 (today) covers the token store, format, issuer, revoker, query and authenticator; the rest follows the roadmap.
+
+- **FrankenPHP worker mode, kernel kept alive and not reset**: no request state in services; a worker test (one
+  kernel, 2,000 requests, two owners, revoke mid-run, flat memory) and the owner status read fresh on every request
+  ([docs/FRANKENPHP-WORKER-AUDIT.md](docs/FRANKENPHP-WORKER-AUDIT.md)).
 
 - **Personal tokens** issued to an owner (referenced by id): name, per-module grants (level + flags), a tenant *reach*,
   mandatory expiry (max 365 days), revoke, revoke all, erasure. Hash at rest (SHA-256), shown once, non-secret lookup
@@ -54,28 +63,41 @@ nowo_api_token:
 
 Every key of the contract is already accepted (strict tree): [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
+## Requirements
+
+- PHP >= 8.2, < 8.6 (Symfony 8.x needs PHP 8.4+)
+- Symfony 7.4, 8.0 or 8.1
+- Doctrine DBAL 4 (`doctrine/dbal` ^4.0) and ORM 3.3+ (`doctrine/orm` ^3.3); DoctrineBundle once the bundle is enabled
+
+## Demo
+
+`demo/symfony8`: Symfony 8.1, FrankenPHP worker mode, MySQL, Web Profiler, Twig Inspector and Hot Reload, on
+http://localhost:8221 (`make -C demo up`). See [docs/DEMO-FRANKENPHP.md](docs/DEMO-FRANKENPHP.md).
+
 ## Documentation
 
 - [Installation](docs/INSTALLATION.md)
 - [Configuration](docs/CONFIGURATION.md)
-- [Usage](docs/USAGE.md) (incl. using it from a DDD / hexagonal application)
-- [Roadmap](docs/ROADMAP.md) (slices and open questions)
-- [Contract](docs/CONTRACT.md)
+- [Usage](docs/USAGE.md)
+- [Contributing](docs/CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Changelog](docs/CHANGELOG.md)
+- [Upgrading](docs/UPGRADING.md)
+- [Release](docs/RELEASE.md)
 - [Security](docs/SECURITY.md)
+- [Engram](docs/ENGRAM.md)
+- [Spec-driven development](docs/SPEC-DRIVEN-DEVELOPMENT.md)
+- [GitHub Spec Kit](docs/SPEC-KIT.md)
+- [Roadmap](docs/ROADMAP.md)
+
+### Additional documentation
+
+- [Contract 221-A](docs/CONTRACT.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [FrankenPHP worker audit](docs/FRANKENPHP-WORKER-AUDIT.md)
 - [Demo with FrankenPHP](docs/DEMO-FRANKENPHP.md)
-- [Upgrading](docs/UPGRADING.md) · [Changelog](docs/CHANGELOG.md) · [Release](docs/RELEASE.md)
-- [Architecture](docs/ARCHITECTURE.md) · [PSR](docs/PSR.md) · [Spec-driven development](docs/SPEC-DRIVEN-DEVELOPMENT.md) · [Spec Kit](docs/SPEC-KIT.md)
-- [Contributing](docs/CONTRIBUTING.md) · [GitHub CI](docs/GITHUB_CI.md) · [Engram](docs/ENGRAM.md)
-
-## Requirements
-
-- PHP >= 8.2, < 8.6
-- Symfony 7.4, 8.0 or 8.1
-
-## Demo
-
-`demo/symfony8`: Symfony 8.1, FrankenPHP worker mode, MySQL, on http://localhost:8221 (`make -C demo up`).
+- [PSR compliance](docs/PSR.md)
+- [GitHub CI](docs/GITHUB_CI.md)
 
 ## Tests and coverage
 

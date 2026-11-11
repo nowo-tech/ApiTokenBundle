@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\ApiTokenBundle\Tests\Fixtures\Ddd\Member" table="ddd_member">
+        <id name="memberId" type="string" column="member_id" length="128"/>
+        <field name="suspended" type="boolean" column="suspended"/>
+    </entity>
+</doctrine-mapping>

@@ -21,7 +21,7 @@ final class ConfigurationTest extends TestCase
         self::assertTrue($config['checksum']);
         self::assertSame(['version' => 1, 'pepper' => null], $config['hash']);
         self::assertSame(['entity_manager' => 'default', 'table_prefix' => 'nowo_', 'auto_mapping' => true, 'mapping' => 'xml'], $config['doctrine']);
-        self::assertSame(['type' => 'user', 'class' => null, 'id_field' => 'id', 'resolver' => null, 'status' => null], $config['owner']);
+        self::assertSame(['type' => 'user', 'class' => null, 'id_field' => 'id', 'resolver' => null, 'status' => null, 'user_checker' => null], $config['owner']);
         self::assertSame([], $config['modules']);
         self::assertSame(['task_board' => 'auto', 'wiki' => 'auto', 'mcp_kit' => 'auto', 'time_track' => false, 'http_log' => 'auto', 'user_kit' => 'auto', 'audit_kit' => 'auto', 'auth_kit' => 'auto'], $config['bridges']);
         self::assertSame(['allow_everything' => true, 'provider' => null, 'max_entries' => 200], $config['reach']);

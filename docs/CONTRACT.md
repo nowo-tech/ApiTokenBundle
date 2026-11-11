@@ -2,6 +2,30 @@
 > recommendation. The Q-B questions (Beacon) stay open: see [ROADMAP.md](ROADMAP.md#open-questions-for-beacon).
 > This copy is the design contract of the bundle; the code follows it slice by slice (S0 = scaffold only).
 
+> **Amendments 2026-11-11 (S1 audit LW, 0.x contract changes):** §2 `doctrine/dbal ^4.0` (Q2); §4.1 `IssuedToken`
+> keeps its secret private behind `secret()` (LW-L1); §4.3 owner status uses the host's firewall user checkers or
+> `owner.user_checker` (LW-M1) and resolvers read fresh state (LW-M2); §5.1 mapping path
+> `src/Resources/config/doctrine-mapping/` (Q5) and the `name_key` column (LW-I3); §6.6 issue checks the owner (LW-L2)
+> and the 0.x purge command runs directly (Q3); §10.1 / §12 S5 enqueue the purge by default.
+
+## Table of contents
+
+- [1. Scope](#1-scope)
+- [2. Package](#2-package)
+- [3. Shape](#3-shape)
+- [4. Public ports (interfaces and value objects)](#4-public-ports-interfaces-and-value-objects)
+- [5. Persistence](#5-persistence)
+- [6. Security design](#6-security-design)
+- [7. Configuration](#7-configuration)
+- [8. UI (UiKit + FormKit, REQ-UI-001/003, REQ-TWIG-005)](#8-ui-uikit--formkit-req-ui-001003-req-twig-005)
+- [9. Beacon migration (what Beacon deletes)](#9-beacon-migration-what-beacon-deletes)
+- [10. Worker-mode design (FrankenPHP, kernel reset false)](#10-worker-mode-design-frankenphp-kernel-reset-false)
+- [11. Test plan (coverage gate ≥ 99 % PHP, ≥ 90 % TS)](#11-test-plan-coverage-gate--99--php--90--ts)
+- [12. Slices](#12-slices)
+- [13. Questions](#13-questions)
+- [Review notes v0.2 (2026-11-11, after the account switch)](#review-notes-v02-2026-11-11-after-the-account-switch)
+
+
 # Contract 221-A: personal API tokens (ApiTokenBundle). Contract v0.1 for symfony-beacon and the matrix apps
 
 Status 2026-11-11: **v0.2, design only, awaiting the owner (Q-O) and Beacon (Q-B).** No code, no repository, no PR,
@@ -98,7 +122,7 @@ Facts that shaped the design:
 | GitHub | `nowo-tech/ApiTokenBundle` (REQ-DOCS-014), public, MIT; the owner creates it and registers it on Packagist after S0 is on `main` |
 | Namespace / class | `Nowo\ApiTokenBundle` / `NowoApiTokenBundle`; config root `nowo_api_token`; Twig namespace and translation domain `NowoApiTokenBundle`; asset package `nowo_api_token` |
 | PHP / Symfony | `>=8.2 <8.6`; `^7.4 \|\| ^8.0` (REQ-SF-001); demo Symfony 8.1 + FrankenPHP worker, MySQL (REQ-DEMO-010/011/012) |
-| Runtime deps | `symfony/{http-foundation,http-kernel,routing,config,dependency-injection,event-dispatcher,security-core,security-http,rate-limiter,uid,clock}`, `doctrine/dbal ^3.9 \|\| ^4`, `doctrine/orm ^3.3` (XML mapping only), `psr/log`, `nowo-tech/ui-kit-bundle`, `nowo-tech/form-kit-bundle` (REQ-TWIG-005), `twig/twig` |
+| Runtime deps | `symfony/{http-foundation,http-kernel,routing,config,dependency-injection,event-dispatcher,security-core,security-http,rate-limiter,uid,clock}`, `doctrine/dbal ^4.0` (amended, Q2: the host-transaction join relies on DBAL 4 savepoints), `doctrine/orm ^3.3` (XML mapping only), `psr/log`, `nowo-tech/ui-kit-bundle`, `nowo-tech/form-kit-bundle` (REQ-TWIG-005), `twig/twig` |
 | Suggest | `nowo-tech/task-board-bundle`, `wiki-bundle`, `mcp-kit-bundle`, `time-track-bundle` (module bridges); `user-kit-bundle` (eraser, export, account status); `http-log-bundle` (credential stamp, *last used* counts); `audit-kit-bundle`; `auth-kit-bundle` (re-auth with MFA); `nelmio/api-doc-bundle` is **not** needed (static OpenAPI file) |
 | First tag | 1.0.0 after S5, the REQ audit and the SEC-004 audit (Q-O6 asks about 0.x tags per slice) |
 
@@ -196,7 +220,14 @@ final readonly class ApiTokenPrincipal  // built per request by the authenticato
     ) {}
 }
 
-final readonly class IssuedToken { public function __construct(public ApiTokenView $token, #[\SensitiveParameter] public string $secret) {} } // returned once
+final readonly class IssuedToken implements \JsonSerializable // returned once (amended, LW-L1)
+{
+    public function __construct(public ApiTokenView $token, #[\SensitiveParameter] string $secret) {} // secret kept private
+    public function secret(): string;            // the only way to read it
+    public function jsonSerialize(): array;      // ['token' => view, 'secret' => '[redacted]']
+    public function __serialize(): array;        // throws LogicException; __unserialize() too
+    public function __debugInfo(): array;        // redacted (print_r, var_dump, VarDumper)
+}
 
 final readonly class IssueRequest
 {
@@ -247,8 +278,8 @@ final class ApiTokenContext { public static function current(Request $request): 
 
 | Interface | Signature | Default |
 | --- | --- | --- |
-| `OwnerResolverInterface` | `ownerOf(object $user): OwnerRef` · `userOf(OwnerRef $owner): ?object` | `DoctrineOwnerResolver`: `user.class` + identifier field (`id`) through the host's ORM, type `user`. DDD hosts implement it |
-| `OwnerStatusInterface` | `isActive(object $user): bool` | `UserCheckerOwnerStatus`: runs the configured `security.user_checker` `checkPreAuth()` (`AccountStatusException` → inactive); with UserKit, its `AccountStatusUserChecker` |
+| `OwnerResolverInterface` | `ownerOf(object $user): OwnerRef` · `userOf(OwnerRef $owner): ?object` | `DoctrineOwnerResolver`: `user.class` + identifier field (`id`) through the host's ORM, type `user`; re-reads the user from the database on every call (refresh query) and detaches it again when it loaded it, so a deactivation by another process is seen on the next request and the identity map does not grow (amended, LW-M2). DDD hosts implement it and must never answer from a cache or an identity map |
+| `OwnerStatusInterface` | `isActive(object $user): bool` | `UserCheckerOwnerStatus`: runs `checkPreAuth()` (`AccountStatusException` → inactive) of the host's checkers: with `owner.user_checker: null` every firewall's `security.user_checker.<firewall>` chained (so the app's own checker and UserKit's `AccountStatusUserChecker` run), or the `owner.user_checker` service, or none with `owner.user_checker: none`. The container refuses to build when no firewall has a checker other than Symfony's stock `security.user_checker`. With a checker, a non-`UserInterface` user is inactive (amended, LW-M1) |
 | `ReachProviderInterface` | `choicesFor(OwnerRef $owner): list<ReachChoice{key, label, group}>` | Returns no choices: only *everything* can be chosen when `reach.allow_everything` is true, otherwise the form refuses |
 | `ReachFilterInterface` (tagged, chained) | `filter(ApiTokenPrincipal $p, Reach $reach): Reach` | Identity. Beacon: organizations that forbid tokens (today `TaskApiOrganizations`) |
 | `ApiTokenPolicyInterface` | `mayIssue(OwnerRef $o): bool` · `modulesFor(OwnerRef $o): list<string>` · `maxTtlDays(OwnerRef $o): int` | Config values (PlanKit can implement it later) |
@@ -261,7 +292,8 @@ final class ApiTokenContext { public static function current(Request $request): 
 ### 5.1 Entity and XML mapping (bundle-owned, referenced by ID: rule 2)
 
 `Nowo\ApiTokenBundle\Domain\ApiToken` is a plain PHP class with no attributes, mapped by
-`src/Resources/config/doctrine/ApiToken.orm.xml`. The bundle prepends the mapping (type `xml`, `is_bundle: false`,
+`src/Resources/config/doctrine-mapping/ApiToken.orm.xml` (amended, Q5: not `config/doctrine`, which DoctrineBundle
+auto-maps by bundle convention under the wrong namespace in hosts that keep the bundle disabled). The bundle prepends the mapping (type `xml`, `is_bundle: false`,
 prefix `Nowo\ApiTokenBundle\Domain`) on the entity manager named in `doctrine.entity_manager` (default `default`).
 
 - **Standard hosts:** zero config. The table appears in `doctrine:migrations:diff`. Hosts may query the entity (read
@@ -281,7 +313,8 @@ Table `<prefix>api_token` (REQ-ORM-002: `doctrine.table_prefix`, default `nowo_`
 | `hash_version` | `smallint` | 1 = SHA-256; 2 = HMAC-SHA256 with pepper (Q-O3); 0 = Beacon legacy (§9) |
 | `owner_type` | `string(32)`, binary | `OwnerRef::$type` |
 | `owner_id` | `string(128)`, **`utf8mb4_bin`** | LQ rule; capped and normalised at the port |
-| `name` | `string(80)` | Trimmed, no control characters, unique per owner (case-insensitive check in PHP) |
+| `name` | `string(80)` | Trimmed, no control characters |
+| `name_key` | `string(80)` | Lower-cased name; unique index `uniq_<p>api_token_owner_name (owner_type, owner_id, name_key)` makes names unique per owner, case-insensitively, under concurrency (amended, LW-I3) |
 | `grants` | `json` | `{"levels": {"tasks": "read"}, "flags": {"mcp": ["destructive"]}}`, validated against the registry on write **and** on read (an unknown module or level is dropped, never widened) |
 | `reach_everything` | `bool` | |
 | `reach` | `json` | List of entries (≤ 200, each ≤ 128 chars, `^[A-Za-z0-9._:-]+$`) |
@@ -442,7 +475,12 @@ stateless.
   - `expiry.default_days` is 90, `expiry.max_days` is 365, and `expiry.choices` defaults to `[7, 30, 90, 365]`.
   - The policy port may lower the maximum per owner.
   - Expired rows are refused at once and purged after `expiry.purge_after_days` (30). The purge runs from the
-    `nowo:api-token:purge-expired` command, keyset batches of 500, DBAL only (`REQ-MESSENGER-007/008`).
+    `nowo:api-token:purge-expired` command, keyset batches of 500 by id, DBAL only, damaged expired rows included,
+    start / success / failure logged. In 0.x the command purges directly (amended, Q3: CLI only, bounded batches, a
+    time budget, only rows expired before the cutoff); from S5 it enqueues `PurgeExpiredApiTokensMessage` by default
+    and `--sync` keeps the direct run (`REQ-MESSENGER-007/008`).
+  - Issue refuses an owner that `OwnerResolverInterface::userOf()` does not find or `OwnerStatusInterface` reports
+    inactive (`ApiTokenIssueRefusedException::OWNER`, amended LW-L2).
   - Optional notice N days before expiry (`expiry.notify_before_days`, default null) through `ApiTokenExpiringEvent`.
     The NotifyKit bridge turns it into a bell row and a mail (contract 221-B).
 - **Revoke:**
@@ -549,7 +587,7 @@ nowo_api_token:
     checksum: true                       # Q-O3
     hash: { version: 1, pepper: null }   # 2 = HMAC with '%env(NOWO_API_TOKEN_PEPPER)%' (Q-O3)
     doctrine: { entity_manager: default, table_prefix: 'nowo_', auto_mapping: true, mapping: xml }   # mapping: xml | attribute (§5.1.1)
-    owner: { type: user, class: null, id_field: id, resolver: null, status: null }   # services override the defaults
+    owner: { type: user, class: null, id_field: id, resolver: null, status: null, user_checker: null }   # user_checker: null (firewall checkers) | service id | 'none'
     modules:                             # merged with bridge-provided modules
         # reports: { levels: [read], flags: [], label: 'Reports' }
     bridges: { task_board: auto, wiki: auto, mcp_kit: auto, time_track: false, http_log: auto, user_kit: auto, audit_kit: auto, auth_kit: auto }
@@ -735,7 +773,8 @@ firewalls, whose patterns move to `%nowo_api_token.api_prefix%`.
 - Maintenance is **enqueue-only** from the scheduler (`REQ-MESSENGER-008`): the bundle ships a Symfony Scheduler
   recipe (`nowo_api_token.schedule: {enabled: false, purge_expired: '20 3 * * *', notify_expiring: '0 8 * * *'}`)
   that dispatches `PurgeExpiredApiTokensMessage` and `NotifyExpiringApiTokensMessage`; hosts with their own
-  maintenance schedule (Beacon `MaintenanceSchedule`) call the commands instead, which also only enqueue.
+  maintenance schedule (Beacon `MaintenanceSchedule`) call the commands instead, which also only enqueue (from S5;
+  `--sync` runs them directly). Until S5 (0.1.0 … 0.4.x) `nowo:api-token:purge-expired` purges directly (Q3).
 - Handlers work in keyset batches of 500 (`REQ-MESSENGER-007`), stop after `messenger.max_seconds` (default 50 s,
   below the worker stop grace, `REQ-MESSENGER-009`) and re-dispatch themselves for the rest.
 - `ApiTokenExpiringEvent` is dispatched by the handler after its read; the NotifyKit bridge (contract 221-B) turns it
@@ -784,7 +823,7 @@ Every slice is a PR on `nowo-tech/ApiTokenBundle`. Slices S1 to S4 are **authent
 | **S2** firewall + limits | 0.2.0 | `ApiTokenFirewallAuthenticator`, request stamp, `on_failure`, stateless check, rate limiters, failed-IP limiter, `ReachFilterInterface` chain, host-API integration docs | Firewall functional tests; one bucket; timing guard | **Immediate** |
 | **S3** account + operator UI | 0.3.0 | Account page, *New token* dialog, re-auth gate + framing headers, revoke / revoke all, operator page, translations ×7, Stimulus wiring (UiKit controllers only, no own TS unless needed), templates doc | UI tests, Playwright e2e, page contract | **Immediate** (credential-granting UI, `REQ-AUTH-013`) |
 | **S4** bridges | 0.4.0 | TaskBoard, Wiki, McpKit bridges (authenticators, limiters, idempotency forget, module definitions), HttpLog resolver + usage reader, UserKit eraser + export + sessions listener, AuditKit recorder, AuthKit re-auth adapter (if Q-O4 yes), AppTokenSource adapter | Each bridge tested with the real bundle in require-dev; Beacon-shaped fixture (three modules, one token) | **Immediate** |
-| **S5** public API + 1.0 | 0.5.0 → **1.0.0** | `<prefix>/tokens/v1/self` GET/DELETE, optional revocation endpoint, OpenAPI, legacy Beacon v1 path (§9.1) and `legacy-report` command, `ApiTokenExpiringEvent` + command, docs (USAGE, CONFIGURATION, UPGRADING, FRANKENPHP-WORKER-AUDIT, TEMPLATES), `bundle-req-audit` 100 % | REQ audit 100 %, SEC-004 audit Pass on S0–S5, owner OK | **Immediate** (new endpoints); then 1.0.0 |
+| **S5** public API + 1.0 | 0.5.0 → **1.0.0** | `<prefix>/tokens/v1/self` GET/DELETE, optional revocation endpoint, OpenAPI, legacy Beacon v1 path (§9.1) and `legacy-report` command, `ApiTokenExpiringEvent` + command, `PurgeExpiredApiTokensMessage` + handler + Scheduler recipe (the purge command enqueues by default, `--sync` for direct runs), docs (USAGE, CONFIGURATION, UPGRADING, FRANKENPHP-WORKER-AUDIT, TEMPLATES), `bundle-req-audit` 100 % | REQ audit 100 %, SEC-004 audit Pass on S0–S5, owner OK | **Immediate** (new endpoints); then 1.0.0 |
 | Beacon | after 1.0.0 (or 0.4.0 behind a flag, Q-O6) | Migration §9, `security.yaml`, delete §9.2 | Beacon's SC matrix (213 / 218 / 219) green on the bundle | Beacon's own |
 
 TimeTrack bridge (Q-O8) and organisation/project tokens (Q-O7) are 1.x minors.

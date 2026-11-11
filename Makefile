@@ -9,48 +9,59 @@ COMPOSE_BIN := $(shell $(DOCKER_BIN) compose version >/dev/null 2>&1 && echo "$(
 COMPOSE     := $(COMPOSE_BIN) -f $(COMPOSE_FILE)
 SERVICE_PHP := php
 
-.PHONY: help up down down-dev build shell install ensure-up test test-coverage test-coverage-100 coverage-check validate-phpdoc coverage-php-percent cs-check cs-fix qa clean release-check release-check-demos demo-smoke composer-sync rector rector-dry phpstan igor update validate assets setup-hooks check-no-cursor-coauthor check-open-prs check-no-raw-html-form check-twig-extra validate-translations test-with-db test-coverage-with-db strip-cursor-coauthor-from-history
+.PHONY: help up down down-dev build shell install ensure-up test test-coverage test-coverage-100 coverage-check validate-phpdoc coverage-php-percent cs-check cs-fix qa clean release-check release-check-demos demo-smoke composer-sync rector rector-dry phpstan igor update validate assets setup-hooks check-no-cursor-coauthor check-open-prs check-no-raw-html-form check-twig-extra validate-translations db-up test-with-db test-coverage-with-db update-deps strip-cursor-coauthor-from-history
 
 help:
 	@echo "API Token Bundle - Development Commands"
 	@echo ""
 	@echo "Usage: make <target>"
 	@echo ""
-	@echo "Targets:"
+	@echo "Container:"
 	@echo "  up            Start Docker container"
 	@echo "  down          Stop Docker container"
-	@echo "  down-dev      Stop containers (keep volumes; REQ-MAKE-007)"
 	@echo "  build         Rebuild Docker image (no cache)"
 	@echo "  shell         Open shell in container"
+	@echo "Dependencies:"
 	@echo "  install       Install Composer dependencies"
+	@echo "Assets:"
 	@echo "  assets        No-op (no frontend assets in this bundle)"
+	@echo "Tests:"
 	@echo "  test          Run PHPUnit tests (starts container if needed)"
 	@echo "  test-coverage Run tests with code coverage (starts container if needed)"
-	@echo "  test-coverage-100 Run tests with coverage and fail below 100% (REQ-TEST-003 / REQ-TEST-006)"
-	@echo "  coverage-check Fail when the last coverage.xml is below 100% statements/elements"
+	@echo "Quality:"
 	@echo "  cs-check      Check code style"
 	@echo "  cs-fix        Fix code style"
 	@echo "  rector        Apply Rector refactoring"
 	@echo "  rector-dry    Run Rector in dry-run mode"
 	@echo "  phpstan       Run PHPStan static analysis"
 	@echo "  igor          Run Igor worker-state audit (REQ-CS-008)"
-	@echo "  validate-phpdoc Fail when a class or public method in src/ has no PHPDoc (REQ-CS-001)"
 	@echo "  qa            Run all QA checks (cs-check + test)"
+	@echo "Release:"
 	@echo "  release-check Pre-release: ensure-up, co-author/open-PR/raw-form checks, composer-sync, cs-fix, cs-check, rector-dry, phpstan, validate-phpdoc, igor, validate-translations, test-coverage + 100% gate, demos"
-	@echo "  check-no-raw-html-form No raw <form>/<input>/<textarea>/<select> in bundle or demo Twig (REQ-TWIG-005)"
-	@echo "  check-twig-extra       twig/extra-bundle in the package and every Twig demo (REQ-TWIG-004)"
-	@echo "  validate-translations  YAML syntax + key parity of the 7 locales (REQ-MAKE-004 / REQ-I18N-002)"
-	@echo "  test-with-db           Integration suite (Doctrine on SQLite in the php container; REQ-TEST-005)"
-	@echo "  test-coverage-with-db  Integration suite with text coverage (REQ-TEST-005)"
-	@echo "  check-open-prs Fail if unresolved open GitHub PRs remain (REQ-REL-003)"
-	@echo "  demo-smoke    REQ-TEST-011: boot demo + HTTP 200 (make -C demo demo-smoke)"
 	@echo "  composer-sync Validate composer.json and align composer.lock (no install)"
+	@echo "Cleanup:"
 	@echo "  clean         Remove vendor and cache"
-	@echo "  update        Update composer.lock (composer update)"
+	@echo "Composer:"
+	@echo "  update        composer update in the bundle container only"
+	@echo "  update-deps   composer update in the bundle, then in every demo (REQ-MAKE-008)"
 	@echo "  validate      Run composer validate --strict"
-	@echo "  setup-hooks   Install git hooks (REQ-GIT-001)"
 	@echo ""
-	@echo "Demos: make -C demo (up-symfony8, down-symfony8, demo-smoke, release-check)"
+	@echo "Bundle-specific:"
+	@echo "  down-dev               Stop containers (keep volumes; REQ-MAKE-007)"
+	@echo "  test-coverage-100      Run tests with coverage and fail below 100% (REQ-TEST-003 / REQ-TEST-006)"
+	@echo "  coverage-check         Fail when the last coverage.xml is below 100% statements/elements"
+	@echo "  test-with-db           Database suite on the MySQL 8.4 service of docker-compose.yml (REQ-TEST-005)"
+	@echo "  test-coverage-with-db  Database suite on MySQL with text coverage (REQ-TEST-005)"
+	@echo "  validate-phpdoc        Fail when a class or public method in src/ has no PHPDoc (REQ-CS-001)"
+	@echo "  validate-translations  YAML syntax + key parity of the 7 locales (REQ-MAKE-004 / REQ-I18N-002)"
+	@echo "  check-no-raw-html-form No raw form tags in bundle or demo Twig (REQ-TWIG-005)"
+	@echo "  check-twig-extra       twig/extra-bundle in the package and every Twig demo (REQ-TWIG-004)"
+	@echo "  check-open-prs         Fail if unresolved open GitHub PRs remain (REQ-REL-003)"
+	@echo "  setup-hooks            Install git hooks (REQ-GIT-001)"
+	@echo ""
+	@echo "Demos:"
+	@echo "  demo-smoke    REQ-TEST-011: boot demo + HTTP 200 (make -C demo demo-smoke)"
+	@echo "  make -C demo  up-symfony8, down-symfony8, demo-smoke, release-check, update-deps-all"
 	@echo ""
 
 build:
@@ -64,7 +75,7 @@ up:
 	@echo "✅ Container ready!"
 
 down:
-	$(COMPOSE) down
+	$(COMPOSE) --profile db down
 
 # Stop containers without removing volumes (REQ-MAKE-007)
 down-dev:
@@ -158,12 +169,20 @@ check-twig-extra:
 validate-translations: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) php .scripts/validate-translations.php
 
-# REQ-TEST-005: the integration suite boots the kernel (and DoctrineBundle on a SQLite file) inside the root php service.
-test-with-db: ensure-up
-	$(COMPOSE) exec -T $(SERVICE_PHP) vendor/bin/phpunit --testsuite Integration
+# REQ-TEST-005: the Database suite (tests/Integration/Database, standard + DDD hosts) against the MySQL 8.4 service
+# of the root docker-compose.yml (profile "db"); `make test` runs the same suite on SQLite; PostgreSQL 17 runs in CI.
+TEST_DB_URL := mysql://root@database:3306/app?serverVersion=8.4.0&charset=utf8mb4
 
-test-coverage-with-db: ensure-up
-	$(COMPOSE) exec -T $(SERVICE_PHP) vendor/bin/phpunit --testsuite Integration --coverage-text
+db-up: ensure-up
+	$(COMPOSE) --profile db up -d database
+	@i=0; until $(COMPOSE) --profile db exec -T database mysqladmin ping -h 127.0.0.1 -uroot --silent >/dev/null 2>&1; do \
+		i=$$((i+1)); if [ $$i -gt 60 ]; then echo "MySQL not ready"; exit 1; fi; sleep 2; done
+
+test-with-db: db-up
+	$(COMPOSE) exec -T -e NOWO_TEST_DATABASE_URL='$(TEST_DB_URL)' $(SERVICE_PHP) vendor/bin/phpunit --testsuite Database
+
+test-coverage-with-db: db-up
+	$(COMPOSE) exec -T -e NOWO_TEST_DATABASE_URL='$(TEST_DB_URL)' $(SERVICE_PHP) vendor/bin/phpunit --testsuite Database --coverage-text
 
 # REQ-TWIG-005: no raw <form>/<input>/<textarea>/<select> in bundle or demo Twig templates.
 check-no-raw-html-form:

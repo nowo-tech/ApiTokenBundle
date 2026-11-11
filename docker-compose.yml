@@ -16,6 +16,20 @@ services:
     networks:
       - api-token-bundle-network
 
+  # REQ-TEST-005: MySQL 8.4 for `make test-with-db` (profile "db": not started by `make up`). Passwordless root on the
+  # private network only, no port published (nothing credential-like in the repository).
+  database:
+    image: mysql:8.4
+    profiles: ["db"]
+    container_name: api-token-bundle-db
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+      MYSQL_DATABASE: app
+    tmpfs:
+      - /var/lib/mysql
+    networks:
+      - api-token-bundle-network
+
 volumes:
   composer-cache:
     driver: local

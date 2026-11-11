@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nowo\ApiTokenBundle\Domain\ApiToken (contract 221-A §5.1). The table name and the index names get the configured
+  doctrine.table_prefix (default "nowo_"), and the identifier columns a binary collation on MySQL / MariaDB, through
+  Nowo\ApiTokenBundle\Infrastructure\Doctrine\ApiTokenMetadataListener. A host that registers this file on its own
+  entity manager (doctrine.auto_mapping: false) gets the same listener, which applies to every entity manager.
+-->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\ApiTokenBundle\Domain\ApiToken" table="api_token">
+        <indexes>
+            <index name="idx_api_token_owner" columns="owner_type,owner_id,created_at"/>
+            <index name="idx_api_token_expires" columns="expires_at"/>
+        </indexes>
+        <unique-constraints>
+            <unique-constraint name="uniq_api_token_lookup" columns="lookup_id"/>
+            <unique-constraint name="uniq_api_token_legacy" columns="legacy_hash"/>
+            <unique-constraint name="uniq_api_token_owner_name" columns="owner_type,owner_id,name_key"/>
+        </unique-constraints>
+
+        <id name="id" type="string" column="id" length="36"/>
+
+        <field name="lookupId" type="string" column="lookup_id" length="12"/>
+        <field name="secretHash" type="string" column="secret_hash" length="64"/>
+        <field name="hashVersion" type="smallint" column="hash_version"/>
+        <field name="ownerType" type="string" column="owner_type" length="32"/>
+        <field name="ownerId" type="string" column="owner_id" length="128"/>
+        <field name="name" type="string" column="name" length="80"/>
+        <field name="nameKey" type="string" column="name_key" length="80"/>
+        <field name="grants" type="json" column="grants"/>
+        <field name="reachEverything" type="boolean" column="reach_everything"/>
+        <field name="reach" type="json" column="reach"/>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="expiresAt" type="datetime_immutable" column="expires_at"/>
+        <field name="lastUsedAt" type="datetime_immutable" column="last_used_at" nullable="true"/>
+        <field name="createdVia" type="string" column="created_via" length="16"/>
+        <field name="legacyHash" type="string" column="legacy_hash" length="64" nullable="true"/>
+    </entity>
+</doctrine-mapping>
