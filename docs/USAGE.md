@@ -35,7 +35,9 @@ nowo_api_token:
 - **Owner status:** the default status runs the user checker of every firewall (`firewalls.<name>.user_checker`, the
   Symfony way, and UserKit's `AccountStatusUserChecker`), so a disabled or locked person is refused on every call. The
   container refuses to build when no firewall has a real checker; then set `owner.user_checker` to a checker service
-  id, or to `none` when your users have no account state ([CONFIGURATION.md](CONFIGURATION.md#owner-status)).
+  id, or to `none` when your users have no account state ([CONFIGURATION.md](CONFIGURATION.md#owner-status)). The
+  automatic mode applies every firewall's checker; to scope it to one firewall set
+  `owner.user_checker: security.user_checker.<firewall>`.
 - **Persistence:** the bundle prepends its XML mapping on `doctrine.entity_manager`; run
   `doctrine:migrations:diff` to create `nowo_api_token`.
 - **Firewall (S2):** add the authenticator to a stateless firewall whose pattern derives from the bundle parameter:

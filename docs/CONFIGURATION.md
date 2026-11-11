@@ -91,6 +91,11 @@ Every authentication (and every issue) asks whether the token's owner is still a
 | null | `none` | No checker: an owner the resolver finds is active. Explicit opt-out for hosts without account states |
 | a service id | (ignored) | Your `OwnerStatusInterface` (DDD hosts) |
 
+**Scope.** The automatic mode applies the checkers of *all* firewalls, so a user refused by any of them (an admin-only
+firewall with stricter rules, for example) is also refused through API tokens. To use one firewall's rules only, name
+its checker: `owner.user_checker: security.user_checker.api` (the alias Symfony keeps per firewall, which follows
+UserKit's chain when it is installed), or your checker service directly.
+
 With a checker, a user object that is not a Symfony `UserInterface` is **inactive** (fail closed). The default Doctrine
 resolver re-reads the user from the database on every call, so a deactivation by another process takes effect on the
 next request.

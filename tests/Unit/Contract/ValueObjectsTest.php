@@ -18,6 +18,7 @@ use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\ReachChoice;
 use Nowo\ApiTokenBundle\Contract\SensitiveValue;
 use Nowo\ApiTokenBundle\Contract\TokenId;
+use Nowo\ApiTokenBundle\Domain\ApiToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\VarDumper\Cloner\VarCloner;
@@ -222,6 +223,13 @@ final class ValueObjectsTest extends TestCase
             }
         }
         self::assertSame($marker, (new SensitiveValue($marker))->reveal());
+        try {
+            clone new SensitiveValue($marker);
+            self::fail('clone must refuse');
+        } catch (LogicException) {
+        }
+        self::assertSame(80, mb_strlen(ApiToken::nameKeyOf(str_repeat('İ', 80))), 'LW-D-L1: the key never grows');
+        self::assertSame('deploy', ApiToken::nameKeyOf('DePloY'));
         foreach ([IssuedToken::class, GeneratedToken::class, SensitiveValue::class] as $class) {
             try {
                 unserialize('O:' . strlen($class) . ':"' . $class . '":0:{}');

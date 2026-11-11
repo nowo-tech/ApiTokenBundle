@@ -406,6 +406,27 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         self::assertSame([], $this->listener()->of(ApiTokenRevokedEvent::class));
     }
 
+    /**
+     * Audit LW-D-L1: a name of 80 characters whose lower case is longer («İ» → «i̇») fits the key column on every
+     * database, and the duplicate is refused cleanly.
+     */
+    public function testANameWhoseLowerCaseGrowsStillFits(): void
+    {
+        $name   = str_repeat('İ', 80);
+        $issued = $this->issue('alice', $name);
+        self::assertSame($name, $issued->token->name);
+        $key = $this->connection()->fetchOne('SELECT name_key FROM ' . $this->table() . ' WHERE id = ?', [$issued->token->id->value]);
+        self::assertIsString($key);
+        self::assertSame(80, mb_strlen($key));
+
+        try {
+            $this->issue('alice', $name);
+            self::fail('duplicate name');
+        } catch (ApiTokenIssueRefusedException $refusal) {
+            self::assertSame(ApiTokenIssueRefusedException::DUPLICATE_NAME, $refusal->reason);
+        }
+    }
+
     public function testIssueRefusesBeyondTheCapAndKeepsNamesUnique(): void
     {
         $this->boot(['max_per_owner' => 2]);

@@ -68,6 +68,14 @@ final class SensitiveValue implements JsonSerializable
     }
 
     /**
+     * A copy would not carry the value (it is keyed by the object): refused instead of silently empty.
+     */
+    public function __clone()
+    {
+        throw new LogicException('A secret cannot be cloned.');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function __serialize(): array

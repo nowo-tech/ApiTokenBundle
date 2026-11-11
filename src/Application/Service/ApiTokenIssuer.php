@@ -31,7 +31,6 @@ use Symfony\Component\Uid\Uuid;
 
 use function count;
 use function in_array;
-use function mb_strtolower;
 use function min;
 use function preg_match;
 use function sprintf;
@@ -137,12 +136,12 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
             try {
                 $this->store->transactional(
                     // @igor-ignore - Closure passed to one transactional() call and released when it returns; never stored.
-                    function () use ($token, $owner, $name, $now): void {
+                    function () use ($token, $owner, $now): void {
                         if ($this->store->countLive($owner, $now) >= $this->maxPerOwner) {
                             throw new ApiTokenIssueRefusedException(ApiTokenIssueRefusedException::TOO_MANY, sprintf('An owner holds at most %d live tokens.', $this->maxPerOwner));
                         }
                         foreach ($this->store->ofOwner($owner, Configuration::MAX_PER_OWNER_CAP) as $existing) {
-                            if (mb_strtolower($existing->name()) === mb_strtolower($name)) {
+                            if ($existing->nameKey() === $token->nameKey()) {
                                 throw new ApiTokenIssueRefusedException(ApiTokenIssueRefusedException::DUPLICATE_NAME, 'Another token of this owner has the same name.');
                             }
                         }

@@ -13,7 +13,9 @@ use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\TokenId;
 
-use function mb_strtolower;
+use function mb_convert_case;
+
+use const MB_CASE_FOLD_SIMPLE;
 
 /**
  * A stored personal token (table `<prefix>api_token`). A plain PHP class with no mapping attributes: the bundle maps
@@ -66,16 +68,25 @@ class ApiToken
         new TokenId($id);
         new LookupId($lookupId);
         new OwnerRef($ownerType, $ownerId);
-        $this->nameKey = mb_strtolower($name);
+        $this->nameKey = self::nameKeyOf($name);
     }
 
     /**
-     * The lower-cased name: unique per owner (`uniq_<prefix>api_token_owner_name`), so two tokens of one owner never
+     * The case-folded name: unique per owner (`uniq_<prefix>api_token_owner_name`), so two tokens of one owner never
      * share a name, even when issued concurrently.
      */
     public function nameKey(): string
     {
         return $this->nameKey;
+    }
+
+    /**
+     * Case-insensitive key of a name: simple Unicode case folding, which maps one character to one character, so the
+     * key never outgrows the 80-character column (`mb_strtolower('İ')` gives two characters; audit LW-D-L1).
+     */
+    public static function nameKeyOf(string $name): string
+    {
+        return mb_convert_case($name, MB_CASE_FOLD_SIMPLE, 'UTF-8');
     }
 
     /**
