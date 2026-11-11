@@ -1,0 +1,19 @@
+{% extends 'base.html.twig' %}
+
+{% block body %}
+    <h1 class="h3 mb-3">API Token Bundle <span class="badge bg-secondary">S0 scaffold</span></h1>
+    <p class="lead">Personal API tokens for Symfony: hashed lookup tokens with per-module grants, a tenant reach, mandatory expiry, revocation, rate limits and audit events, one Bearer authenticator for every API and a UiKit account and operator UI.</p>
+    <p>
+        The package is built slice by slice from its design contract. S0 ships the bundle class and its strict
+        configuration tree; the features arrive with the next slices (see <code>docs/ROADMAP.md</code>).
+    </p>
+    <table class="table table-sm bg-white" data-testid="demo-status">
+        <tbody>
+            <tr><th scope="row">Bundle</th><td><code>Nowo\ApiTokenBundle\NowoApiTokenBundle</code> registered, <code>nowo_api_token.enabled</code> = <strong>{{ enabled ? 'true' : 'false' }}</strong></td></tr>
+            <tr><th scope="row">API prefix parameter</th><td><code>%nowo_api_token.api_prefix%</code> = <code>{{ api_prefix }}</code></td></tr>
+            <tr><th scope="row">Table prefix</th><td><code>{{ table_prefix }}</code></td></tr>
+            <tr><th scope="row">Database</th><td>{{ database is null ? 'not reachable' : 'MySQL ' ~ database }}</td></tr>
+            <tr><th scope="row">FrankenPHP</th><td>{{ worker ? 'worker mode (kernel kept alive)' : 'classic mode' }}</td></tr>
+        </tbody>
+    </table>
+{% endblock %}
