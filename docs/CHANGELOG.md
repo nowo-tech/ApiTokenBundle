@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-11
+
 ### Added
 
 - S0 scaffold (contract 221-A, [CONTRACT.md](CONTRACT.md)): the bundle class `NowoApiTokenBundle`, the strict configuration
@@ -49,3 +51,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Events `ApiTokenIssuedEvent`, `ApiTokenRevokedEvent`, `ApiTokenUsedEvent` (ids and value objects only).
   - `Grants` keeps modules in key order, so a stored grant reads back identically on MySQL (which reorders JSON keys), PostgreSQL and SQLite.
   - Runtime dependencies: `doctrine/dbal` ^4, `doctrine/orm` ^3.3, `symfony/{clock,console,event-dispatcher,security-core,uid}`, `psr/{clock,event-dispatcher,log}`. DoctrineBundle is required at runtime once enabled.
+
+[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.1.0

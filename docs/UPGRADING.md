@@ -2,9 +2,14 @@
 
 ## Table of contents
 
-- [Unreleased (S0 scaffold, S1 core)](#unreleased-s0-scaffold-s1-core)
+- [Unreleased](#unreleased)
+- [To 0.1.0](#to-010)
 
-## Unreleased (S0 scaffold, S1 core)
+## Unreleased
+
+## To 0.1.0
+
+First release (S0 scaffold, S1 core).
 
 No release yet. The first tag follows [ROADMAP.md](ROADMAP.md). Every schema change in 1.x is additive and will be
 listed here with its DDL.
