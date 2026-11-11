@@ -4,9 +4,10 @@
 
 **Personal API tokens for Symfony: hashed lookup tokens with per-module grants, a tenant reach, mandatory expiry, revocation, rate limits and audit events, one Bearer authenticator for every API and a UiKit account and operator UI.**
 
-> 🚧 **Status: S0 scaffold, no release yet.** The package is built slice by slice from its design contract
-> ([docs/CONTRACT.md](docs/CONTRACT.md), 221-A). S0 ships the bundle class, the strict configuration tree and every
-> quality gate; the features below land with the slices in [docs/ROADMAP.md](docs/ROADMAP.md).
+> 🚧 **Status: S1 core, no release yet.** The package is built slice by slice from its design contract
+> ([docs/CONTRACT.md](docs/CONTRACT.md), 221-A). S1 ships the token store, format and hash, the issuer, revoker, query
+> and authenticator services, the module registry and the `issue` / `purge-expired` commands for standard and DDD
+> hosts; the firewall, pages, bridges and HTTP API land with the next slices in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 > 📋 **Compatible with Symfony 7.4, 8.0 and 8.1** · PHP 8.2+ (Symfony 8.x requires PHP 8.4+)
 

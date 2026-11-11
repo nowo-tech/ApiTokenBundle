@@ -18,7 +18,7 @@ use function sprintf;
 
 /**
  * Strict configuration tree of `nowo_api_token` (contract 221-A §7). Every key exists from S0 so hosts can write the
- * final configuration now; S0 itself registers nothing.
+ * final configuration now; each slice wires the keys it implements (S1: core services, persistence, commands).
  */
 final class Configuration implements ConfigurationInterface
 {
@@ -27,6 +27,9 @@ final class Configuration implements ConfigurationInterface
 
     /** Tokens always expire (Q-O5): hosts may lower the maximum, never lift it. */
     public const MAX_TTL_DAYS = 365;
+
+    /** Upper bound of `max_per_owner`. */
+    public const MAX_PER_OWNER_CAP = 1000;
 
     /**
      * The `nowo_api_token` tree.
@@ -99,7 +102,7 @@ final class Configuration implements ConfigurationInterface
                     ->end()
                 ->end()
                 ->append($this->expiry())
-                ->integerNode('max_per_owner')->defaultValue(20)->min(1)->max(1000)->end()
+                ->integerNode('max_per_owner')->defaultValue(20)->min(1)->max(self::MAX_PER_OWNER_CAP)->end()
                 ->arrayNode('reauth')
                     ->addDefaultsIfNotSet()
                     ->children()

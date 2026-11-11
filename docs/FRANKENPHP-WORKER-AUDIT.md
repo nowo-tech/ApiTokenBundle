@@ -3,10 +3,10 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/api-token-bundle` (`symfony-bundle`) |
-| Audited revision | S0 scaffold (unreleased, `main`) |
+| Audited revision | S1 core (unreleased, branch `feat/s1`) |
 | Audit date | 2026-11-12 |
 | Method | Manual review of every file under `src/`; PHPStan `ruleset-classic` + `ruleset-worker-strict` + `ruleset-hardening`; Igor (`composer igor`); `WorkerRequestLoopTest` (one kernel, 2,000 requests, two owners alternating, memory drift < 1 MiB) |
-| **Verdict** | ✅ **Viable** — S0 registers no service; the bundle class and extension hold boot-time state only |
+| **Verdict** | ✅ **Viable** — every S1 service is stateless except the after-commit queue, which holds request-scoped work and drops it at every request / message boundary and on `kernel.reset` |
 
 ## Table of contents
 
@@ -26,13 +26,13 @@ resetter between requests.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Mutable state in shared services | ✅ | No service in S0 |
-| `ResetInterface` / `kernel.reset` | n/a | No memo in S0 |
-| Cross-owner leakage | ✅ | `WorkerRequestLoopTest`: each of 2,000 requests sees only its own owner header |
+| Mutable state in shared services | ✅ | Only `AfterCommitQueue` (held after-commit work of an open host transaction, weak-keyed by connection) |
+| `ResetInterface` / `kernel.reset` | ✅ | `AfterCommitQueue` implements it and is also cleared on `kernel.finish_request` (main request), `kernel.terminate`, `console.terminate`, `WorkerMessageHandledEvent` and `WorkerMessageFailedEvent`; `WorkerRequestLoopTest` covers each path |
+| Cross-owner leakage | ✅ | `WorkerRequestLoopTest`: one kernel, 2,000 requests, two owners and four tokens alternating (valid, wrong checksum, expired, revoked mid-run, missing); each sees only its own principal and the refused ones none |
 | Memory growth | ✅ | < 1 MiB drift after warm-up over 2,000 requests |
 | Static properties / `static` locals | ✅ | None (the bundle's extension instance is the Symfony boot-time cache, `@igor-ignore` with justification) |
 | Superglobals, `putenv`, `ini_set`, `setlocale`, timezone | ✅ | None |
-| Doctrine | n/a | No table in S0; later slices write through DBAL in their own transactions and never keep managed entities |
+| Doctrine | ✅ | `DbalApiTokenStore` writes through DBAL in a transaction it opens and closes, never flushes an EntityManager and never keeps a managed entity; the connection is resolved per call and a lost connection is retried once outside a transaction |
 | Resources held open | ✅ | None |
 
 ## Services reviewed
@@ -40,7 +40,12 @@ resetter between requests.
 | Class | State | Verdict |
 |-------|-------|---------|
 | `NowoApiTokenBundle` | Extension instance cached at boot | ✅ boot-time only |
-| `DependencyInjection\NowoApiTokenExtension`, `Configuration`, `ConfigNodes` | Container build only | ✅ |
+| `DependencyInjection\NowoApiTokenExtension`, `Configuration`, `ConfigNodes`, `Compiler\RequireDoctrinePass` | Container build only | ✅ |
+| `ApiTokenIssuer`, `ApiTokenRevoker`, `ApiTokenQuery`, `ApiTokenAuthenticator`, `TokenCodec`, `TokenHasher` | `final readonly`, injected collaborators and scalars only | ✅ (Igor's closure / clock notes are `@igor-ignore` with a reason: closures passed to one call, immutable dates) |
+| `ModuleRegistry` | Built once from config and tagged providers, immutable | ✅ |
+| `DbalApiTokenStore`, `ApiTokenMetadataListener`, `DoctrineOwnerResolver`, `UserCheckerOwnerStatus`, config defaults | `final readonly`, no memo; owner and status read on every call | ✅ |
+| `AfterCommitQueue`, `AfterCommitMiddleware`, `AfterCommitQueueResetListener` | Request-scoped held work, cleared at every boundary | ✅ |
+| `IssueTokenCommand`, `PurgeExpiredTokensCommand` | Console only, no state between runs | ✅ |
 
 ## Rules for the next slices
 

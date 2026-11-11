@@ -10,7 +10,10 @@
 
 ## Status
 
-S0 scaffold: no runtime code, no route, no table. Nothing is reachable whatever the configuration.
+S1 core (unreleased): the store, the token format, the hash at rest, the issuer, revoker, query and authenticator
+services and two console commands. No route and no firewall authenticator yet (S2): nothing is reachable over HTTP,
+and nothing is registered while `enabled` is false. S1 is an authentication slice and needs its immediate
+REQ-SEC-004 audit before the 0.1.0 tag.
 
 ## Threat model
 
@@ -34,7 +37,14 @@ From contract §6.11. Each threat names the control that answers it and the slic
 
 - **S0:** strict configuration (unknown keys refused), `enabled: false`, no service registered; GitGuardian-safe
   repository (no credential-looking strings, passwordless CI databases).
-- **S1–S5:** see the table above and the contract.
+- **S1:** the token format (`<prefix><12-char lookup id>_<43-char secret><6-char CRC32>`), 256-bit secrets from
+  `random_bytes`, SHA-256 of the full token at rest (HMAC-SHA256 with a pepper as `hash.version: 2`), fixed
+  verification order with no database read for malformed values, a dummy constant-time comparison on a miss, no SQL
+  condition on the hash, owner status on every call, grants narrowed on read, exact owner comparison in SQL (binary
+  collation) and in PHP, mandatory expiry (≤ 365 days), revocation that deletes the row, events with ids only,
+  `#[\SensitiveParameter]` on every secret-carrying parameter, and `IssuedToken` that hides its secret from
+  `var_dump()` / `print_r()` (`__debugInfo()`).
+- **S2–S5:** see the table above and the contract.
 
 ## Audits
 

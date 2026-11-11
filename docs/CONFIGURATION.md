@@ -2,7 +2,12 @@
 
 Root key: `nowo_api_token`. The tree is **strict** (REQ-SF-006): unknown keys and invalid values are refused at
 container build, and the message names the path and the allowed values. Every key of contract §7 is accepted from S0;
-the column *Used from* says which slice reads it. **S0 registers nothing**, whatever the values.
+the column *Used from* says which slice reads it. With `enabled: false` (the default) nothing is registered, whatever
+the other values.
+
+`enabled: true` (S1) needs DoctrineBundle and an owner: `owner.class` (your user entity, for the default Doctrine
+resolver) or `owner.resolver` (an `OwnerResolverInterface` service); the container refuses to build otherwise, with a
+message that says so.
 
 ## Table of contents
 
@@ -58,11 +63,18 @@ nowo_api_token:
 
 | Key | Used from |
 | --- | --- |
-| `enabled`, `doctrine`, `owner`, `modules`, `token_prefix`, `checksum`, `hash`, `expiry`, `max_per_owner`, `schedule`, `messenger` | S1 |
-| `firewall`, `rate_limit`, `reach` | S2 |
-| `reauth`, `web_ui`, `admin_ui` | S3 |
-| `bridges`, `http_log`, `revoke_on_sessions_revoked`, `settings_provider` | S4 |
-| `api`, `legacy` | S5 |
+| `enabled`, `doctrine`, `owner`, `modules`, `token_prefix`, `checksum`, `hash`, `expiry` (except `choices`, `notify_before_days`), `max_per_owner`, `reach`, `settings_provider`, `messenger` (the purge command) | S1 |
+| `firewall`, `rate_limit` | S2 |
+| `reauth`, `web_ui`, `admin_ui`, `expiry.choices` | S3 |
+| `bridges`, `http_log`, `revoke_on_sessions_revoked` | S4 |
+| `api`, `legacy`, `schedule`, `expiry.notify_before_days` | S5 |
+
+S1 service ids (all public aliases a host may replace through the keys above or by decorating them):
+`ApiTokenIssuerInterface`, `ApiTokenRevokerInterface`, `ApiTokenQueryInterface`, `ApiTokenAuthenticatorInterface`,
+`OwnerResolverInterface` (`owner.resolver`), `OwnerStatusInterface` (`owner.status`), `ReachProviderInterface`
+(`reach.provider`), `ApiTokenPolicyInterface`, `ApiTokenSettingsProviderInterface` (`settings_provider`), all in
+`Nowo\ApiTokenBundle\Contract`. Services implementing `TokenRevocationListenerInterface` or
+`ModuleDefinitionProviderInterface` are tagged automatically (autoconfiguration).
 
 ## Container parameters
 

@@ -16,6 +16,7 @@ This repository follows the Nowo spec-driven workflow:
 ## Table of contents
 
 - [User stories (S0)](#user-stories-s0)
+- [User stories (S1)](#user-stories-s1)
 - [Slices](#slices)
 
 ## User stories (S0)
@@ -25,6 +26,16 @@ This repository follows the Nowo spec-driven workflow:
 | US-S0-01 | **As an** integrator, **I want** to install the package and write the final configuration now **so that** later slices only switch features on. |
 | US-S0-02 | **As a** maintainer, **I want** every quality gate (tests, coverage 100 %, PHPStan + worker rules, Igor, CS, Rector, demo smoke) from the first PR **so that** no slice lowers the bar. |
 | US-S0-03 | **As a** platform maintainer, **I want** a worker-mode test (one kernel, many requests) from S0 **so that** each stateful slice extends it. |
+
+## User stories (S1)
+
+| ID | Story |
+| --- | --- |
+| US-S1-01 | **As an** integrator, **I want** to issue a token for a person with per-module grants, a reach and an expiry **so that** an integration gets only what the person chose. |
+| US-S1-02 | **As an** API owner, **I want** to check a presented token and get the owner, grants and reach, or a failure kind **so that** my API never sees a disabled, expired, revoked or unknown token. |
+| US-S1-03 | **As a** person, **I want** to revoke one or all of my tokens **so that** a leaked token stops working at once. |
+| US-S1-04 | **As a** DDD host, **I want** to keep my user model, entity manager and transactions **so that** the bundle never touches my domain or flushes my EntityManager. |
+| US-S1-05 | **As an** operator, **I want** to issue a token from the console and purge expired rows **so that** tests, break-glass access and housekeeping need no UI. |
 
 ## Slices
 

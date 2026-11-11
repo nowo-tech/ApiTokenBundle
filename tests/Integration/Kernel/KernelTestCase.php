@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Nowo\ApiTokenBundle\Tests\Integration\Kernel;
 
+use Closure;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\Filesystem\Filesystem;
 
 use function count;
@@ -29,11 +31,12 @@ abstract class KernelTestCase extends TestCase
 
     /**
      * @param array<string, mixed> $config `nowo_api_token` configuration
+     * @param (Closure(ContainerConfigurator, string): void)|null $configure
      */
-    protected function bootKernel(array $config = [], ?string $databaseUrl = null): TestKernel
+    protected function bootKernel(array $config = [], ?string $databaseUrl = null, ?Closure $configure = null, bool $authRoute = false): TestKernel
     {
         $id              = (string) preg_replace('/\W+/', '_', static::class . '_' . $this->name() . '_' . count($this->kernels));
-        $kernel          = new TestKernel($id, $config, $databaseUrl);
+        $kernel          = new TestKernel($id, $config, $databaseUrl, $configure, $authRoute);
         $this->kernels[] = $kernel;
         $kernel->boot();
 
