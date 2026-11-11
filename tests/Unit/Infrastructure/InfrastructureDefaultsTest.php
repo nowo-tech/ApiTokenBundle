@@ -95,11 +95,22 @@ final class InfrastructureDefaultsTest extends TestCase
         self::assertNull($this->resolver(['id' => '1'])->userOf(new OwnerRef('member', '1')));
     }
 
-    public function testTheStatusWithoutAUserCheckerOrForAPlainObjectIsActive(): void
+    public function testTheStatusRunsEveryCheckerAndFailsClosed(): void
     {
-        self::assertTrue((new UserCheckerOwnerStatus())->isActive(new User('1', false)));
-        self::assertTrue((new UserCheckerOwnerStatus(new ActiveUserChecker()))->isActive(new stdClass()));
-        self::assertFalse((new UserCheckerOwnerStatus(new ActiveUserChecker()))->isActive(new User('1', false)));
+        self::assertTrue((new UserCheckerOwnerStatus())->isActive(new User('1', false)), 'owner.user_checker: none');
+        self::assertFalse((new UserCheckerOwnerStatus([new ActiveUserChecker()]))->isActive(new stdClass()), 'not a UserInterface');
+        self::assertFalse((new UserCheckerOwnerStatus([new ActiveUserChecker()]))->isActive(new User('1', false)));
+        self::assertTrue((new UserCheckerOwnerStatus([new ActiveUserChecker(), new ActiveUserChecker()]))->isActive(new User('1')));
+    }
+
+    public function testTheResolverNeedsTheOrm(): void
+    {
+        $registry = $this->createStub(ManagerRegistry::class);
+        $registry->method('getManagerForClass')->willReturn($this->createStub(ObjectManager::class));
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('not mapped by a Doctrine ORM entity manager');
+        (new DoctrineOwnerResolver($registry, User::class))->userOf(new OwnerRef('user', '1'));
     }
 
     public function testAfterCommitFailuresAreLoggedNotThrown(): void
@@ -128,7 +139,7 @@ final class InfrastructureDefaultsTest extends TestCase
     public function testTheAttributeTwinHoldsTheColumns(): void
     {
         $now    = new DateTimeImmutable();
-        $record = new ApiTokenRecord('id', 'lookup', 'hash', 1, 'user', '1', 'CI', [], true, [], $now, $now, null, 'cli', null);
+        $record = new ApiTokenRecord('id', 'lookup', 'hash', 1, 'user', '1', 'CI', 'ci', [], true, [], $now, $now, null, 'cli', null);
 
         self::assertSame('cli', $record->createdVia);
         self::assertNull($record->legacyHash);

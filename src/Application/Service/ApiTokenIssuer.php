@@ -17,6 +17,8 @@ use Nowo\ApiTokenBundle\Contract\Exception\InvalidApiTokenArgumentException;
 use Nowo\ApiTokenBundle\Contract\IssuedToken;
 use Nowo\ApiTokenBundle\Contract\IssueRequest;
 use Nowo\ApiTokenBundle\Contract\ModuleRegistry;
+use Nowo\ApiTokenBundle\Contract\OwnerResolverInterface;
+use Nowo\ApiTokenBundle\Contract\OwnerStatusInterface;
 use Nowo\ApiTokenBundle\Contract\ReachProviderInterface;
 use Nowo\ApiTokenBundle\DependencyInjection\Configuration;
 use Nowo\ApiTokenBundle\Domain\ApiToken;
@@ -38,7 +40,7 @@ use function trim;
 /**
  * Default {@see ApiTokenIssuerInterface} (contract §6.1, §6.4–§6.6).
  *
- * Order: module switch, policy gate, name and channel, grants (registry, policy modules, module switches), reach
+ * Order: module switch, policy gate, owner resolved and active, name and channel, grants (registry, policy modules, module switches), reach
  * (allow-everything, the owner's choices, max entries), expiry (1 … min(`expiry.max_days`, policy, 365)), then, in one
  * transaction, the live-token cap and the per-owner name check, and the insert. The lookup id is regenerated on a
  * collision (3 tries). {@see ApiTokenIssuedEvent} is dispatched after commit.
@@ -60,6 +62,8 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
         private ApiTokenPolicyInterface $policy,
         private ReachProviderInterface $reachProvider,
         private ApiTokenSettingsProviderInterface $settings,
+        private OwnerResolverInterface $ownerResolver,
+        private OwnerStatusInterface $ownerStatus,
         private EventDispatcherInterface $dispatcher,
         private int $maxPerOwner = 20,
         private int $maxDays = Configuration::MAX_TTL_DAYS,
@@ -81,6 +85,10 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
         }
         if (!$this->policy->mayIssue($owner)) {
             throw new ApiTokenIssueRefusedException(ApiTokenIssueRefusedException::POLICY, 'This owner may not issue API tokens.');
+        }
+        $user = $this->ownerResolver->userOf($owner);
+        if ($user === null || !$this->ownerStatus->isActive($user)) {
+            throw new ApiTokenIssueRefusedException(ApiTokenIssueRefusedException::OWNER, 'The owner does not exist or is not active.');
         }
         $name = trim($request->name);
         if (preg_match('/^[^\p{Cc}]{1,' . ApiToken::MAX_NAME_LENGTH . '}$/Du', $name) !== 1) {
@@ -113,7 +121,7 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
             $token     = new ApiToken(
                 Uuid::v7()->toRfc4122(),
                 $generated->lookupId->value,
-                $this->hasher->hash($generated->token),
+                $this->hasher->hash($generated->token()),
                 $this->hasher->currentVersion(),
                 $owner->type,
                 $owner->id,
@@ -162,7 +170,7 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
                 continue;
             }
 
-            return new IssuedToken($token->toView(), $generated->token);
+            return new IssuedToken($token->toView(), $generated->token());
         }
     }
 

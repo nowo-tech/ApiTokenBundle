@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Nowo\ApiTokenBundle;
 
+use Nowo\ApiTokenBundle\DependencyInjection\Compiler\OwnerUserCheckerPass;
 use Nowo\ApiTokenBundle\DependencyInjection\Compiler\RequireDoctrinePass;
 use Nowo\ApiTokenBundle\DependencyInjection\NowoApiTokenExtension;
+use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\ExtensionInterface;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
@@ -32,6 +34,7 @@ final class NowoApiTokenBundle extends Bundle
     {
         parent::build($container);
         $container->addCompilerPass(new RequireDoctrinePass());
+        $container->addCompilerPass(new OwnerUserCheckerPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -1000);
     }
 
     /**

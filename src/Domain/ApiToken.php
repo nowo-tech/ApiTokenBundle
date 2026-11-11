@@ -13,6 +13,8 @@ use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\TokenId;
 
+use function mb_strtolower;
+
 /**
  * A stored personal token (table `<prefix>api_token`). A plain PHP class with no mapping attributes: the bundle maps
  * it in XML (`Resources/config/doctrine-mapping/ApiToken.orm.xml`) for the schema and for read-only host queries, and writes
@@ -32,6 +34,9 @@ class ApiToken
 
     /** Longest token name, in characters. */
     public const MAX_NAME_LENGTH = 80;
+
+    /** Case-insensitive key of {@see self::$name} (column `name_key`). */
+    private string $nameKey;
 
     /**
      * Validates every identifier through its value object.
@@ -61,6 +66,16 @@ class ApiToken
         new TokenId($id);
         new LookupId($lookupId);
         new OwnerRef($ownerType, $ownerId);
+        $this->nameKey = mb_strtolower($name);
+    }
+
+    /**
+     * The lower-cased name: unique per owner (`uniq_<prefix>api_token_owner_name`), so two tokens of one owner never
+     * share a name, even when issued concurrently.
+     */
+    public function nameKey(): string
+    {
+        return $this->nameKey;
     }
 
     /**

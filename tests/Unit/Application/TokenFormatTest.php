@@ -31,13 +31,13 @@ final class TokenFormatTest extends TestCase
         $seen  = [];
         for ($i = 0; $i < 200; ++$i) {
             $generated = $codec->generate();
-            self::assertSame(1, preg_match('/^nwt_([a-z2-7]{12})_[A-Za-z0-9_-]{43}[0-9A-Za-z]{6}$/D', $generated->token, $m));
+            self::assertSame(1, preg_match('/^nwt_([a-z2-7]{12})_[A-Za-z0-9_-]{43}[0-9A-Za-z]{6}$/D', $generated->token(), $m));
             self::assertSame($m[1], $generated->lookupId->value);
-            self::assertSame($generated->lookupId->value, $codec->parse($generated->token)?->value);
-            $seen[$generated->token] = true;
+            self::assertSame($generated->lookupId->value, $codec->parse($generated->token())?->value);
+            $seen[$generated->token()] = true;
         }
         self::assertCount(200, $seen, 'tokens are random');
-        self::assertStringNotContainsString($generated->token, print_r($generated, true));
+        self::assertStringNotContainsString($generated->token(), print_r($generated, true));
     }
 
     public function testWithoutChecksum(): void
@@ -45,8 +45,8 @@ final class TokenFormatTest extends TestCase
         $codec     = new TokenCodec('bt_', false);
         $generated = $codec->generate();
 
-        self::assertSame(3 + 12 + 1 + 43, strlen($generated->token));
-        self::assertSame($generated->lookupId->value, $codec->parse($generated->token)?->value);
+        self::assertSame(3 + 12 + 1 + 43, strlen($generated->token()));
+        self::assertSame($generated->lookupId->value, $codec->parse($generated->token())?->value);
     }
 
     public function testChecksumIsSixBase62Characters(): void
@@ -63,7 +63,7 @@ final class TokenFormatTest extends TestCase
     public static function malformed(): iterable
     {
         $codec = new TokenCodec('nwt_');
-        $valid = $codec->generate()->token;
+        $valid = $codec->generate()->token();
         $body  = substr($valid, 0, -6);
 
         yield 'empty' => [''];

@@ -33,7 +33,7 @@ final class SchemaTest extends KernelTestCase
         self::assertSame($this->describe($xml), $this->describe($attribute));
         $indexes = array_keys($xml->getIndexes());
         sort($indexes);
-        self::assertSame(['idx_nowo_api_token_expires', 'idx_nowo_api_token_owner', 'primary', 'uniq_nowo_api_token_legacy', 'uniq_nowo_api_token_lookup'], $indexes);
+        self::assertSame(['idx_nowo_api_token_expires', 'idx_nowo_api_token_owner', 'primary', 'uniq_nowo_api_token_legacy', 'uniq_nowo_api_token_lookup', 'uniq_nowo_api_token_owner_name'], $indexes);
     }
 
     public function testCollationsFollowThePlatform(): void

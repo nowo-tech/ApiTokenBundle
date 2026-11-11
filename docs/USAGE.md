@@ -13,6 +13,7 @@
 - [Events (S1)](#events-s1)
 - [Protecting your own API](#protecting-your-own-api)
 - [FrankenPHP worker mode](#frankenphp-worker-mode)
+- [Translations](#translations)
 
 ## In a standard Symfony application
 
@@ -22,12 +23,19 @@ Zero configuration beyond `enabled: true` and your user class (S1+):
 nowo_api_token:
     enabled: true
     owner: { class: App\Entity\User }   # identifier field `id` by default (owner.id_field)
+    # The owner status uses your firewalls' user checkers automatically (owner.user_checker: null).
     modules:
         reports: { levels: [read, write], label: 'Reports' }
 ```
 
 - **Owner:** the default `DoctrineOwnerResolver` maps your user entity (`owner.class`, identifier `owner.id_field`) to
-  an `OwnerRef('user', '<id>')`; the default owner status runs your `security.user_checker`.
+  an `OwnerRef('user', '<id>')` and re-reads the user from the database on every call (a deactivation by another
+  process is seen on the next request; a user it loaded itself is detached again, so your identity map does not grow
+  and the principal's `user` may be a detached snapshot).
+- **Owner status:** the default status runs the user checker of every firewall (`firewalls.<name>.user_checker`, the
+  Symfony way, and UserKit's `AccountStatusUserChecker`), so a disabled or locked person is refused on every call. The
+  container refuses to build when no firewall has a real checker; then set `owner.user_checker` to a checker service
+  id, or to `none` when your users have no account state ([CONFIGURATION.md](CONFIGURATION.md#owner-status)).
 - **Persistence:** the bundle prepends its XML mapping on `doctrine.entity_manager`; run
   `doctrine:migrations:diff` to create `nowo_api_token`.
 - **Firewall (S2):** add the authenticator to a stateless firewall whose pattern derives from the bundle parameter:
@@ -50,7 +58,7 @@ The bundle never forces its classes into your domain:
 | Concern | How a strict DDD host does it |
 | --- | --- |
 | Domain coupling | Your domain depends only on `Nowo\ApiTokenBundle\Contract\*`: interfaces and `final readonly` value objects (`OwnerRef`, `TokenId`, `Grants`, `Reach`, `ApiTokenView`, `ApiTokenPrincipal`). No Doctrine, Symfony or HTTP type appears in them (S1). |
-| Owner | Implement `OwnerResolverInterface` (`ownerOf(object $user): OwnerRef`, `userOf(OwnerRef): ?object`) and `OwnerStatusInterface`; set `owner.resolver` / `owner.status`. Tokens reference your user by `OwnerRef` (type + id), never by a Doctrine relation. |
+| Owner | Implement `OwnerResolverInterface` (`ownerOf(object $user): OwnerRef`, `userOf(OwnerRef): ?object`) and `OwnerStatusInterface`; set `owner.resolver` / `owner.status`. `userOf()` and `isActive()` run on every authentication and must read current state: never answer from a cache or an EntityManager identity map (worker mode keeps them across requests). Tokens reference your user by `OwnerRef` (type + id), never by a Doctrine relation. |
 | Mapping | Set `doctrine.auto_mapping: false` and register `vendor/nowo-tech/api-token-bundle/src/Resources/config/doctrine-mapping` (type `xml`, prefix `Nowo\ApiTokenBundle\Domain`, `is_bundle: false`) on your own entity manager, or copy it. Set `doctrine.entity_manager` to that manager (or to a DBAL connection name): the store writes through its connection. Reference tokens by `TokenId`. |
 | Transactions | The bundle writes through DBAL in its own transaction and never flushes your EntityManager; called inside your transaction on the same connection, it joins it and holds its events until your commit. |
 | Events | `ApiTokenIssuedEvent`, `ApiTokenRevokedEvent`, … carry ids and value objects only, dispatched after commit. |
@@ -88,7 +96,7 @@ $issued = $issuer->issue(new IssueRequest(
     reach: Reach::everything(),                      // or Reach::limitedTo(['<project-uuid>', 'wiki:handbook'])
     expiresInDays: 90,
 ));
-$issued->secret;      // the full token: show it once, never store or log it
+$issued->secret();    // the full token: show it once, never store or log it
 $issued->token;       // ApiTokenView: id, lookup id, name, grants, reach, dates (no secret, no hash)
 
 $result = $authenticator->authenticate($presented);   // ApiTokenPrincipal or an AuthFailure case
@@ -97,7 +105,14 @@ $revoker->revoke($owner, $tokenId, RevocationReason::Owner);   // false when not
 $revoker->revokeAll($owner, RevocationReason::OwnerAll);
 ```
 
-- **Refusals:** `issue()` throws `ApiTokenIssueRefusedException` (its `reason`: `disabled`, `policy`, `grants`,
+- **The secret** is only reachable through `IssuedToken::secret()`. The object protects itself: `json_encode()` gives
+  the view and `"[redacted]"`, `serialize()` / `unserialize()` throw a `LogicException`, and `var_export()`, an
+  `(array)` cast, `print_r()` and Symfony VarDumper never show it. Still, never put the string from `secret()` in a
+  log, a flash message, the session or a cache.
+- **Owner:** `issue()` refuses an owner that does not exist or is inactive (reason `owner`), so no token is ever
+  created for a missing id that could later be assigned to someone else. Erasing a person must also revoke their
+  tokens (`revokeAll($owner, RevocationReason::Erasure)`; the S4 UserKit eraser does it for you).
+- **Refusals:** `issue()` throws `ApiTokenIssueRefusedException` (its `reason`: `disabled`, `policy`, `owner`, `grants`,
   `reach`, `expiry`, `too_many`, `duplicate_name`) for a well-formed request that is not allowed, and
   `InvalidApiTokenArgumentException` for a malformed one (name, channel, identifiers). Neither message contains a
   secret.
@@ -113,18 +128,25 @@ $revoker->revokeAll($owner, RevocationReason::OwnerAll);
   `ApiTokenUsedEvent`.
 - **Revocation deletes the row**, runs the tagged `TokenRevocationListenerInterface` services, then dispatches
   `ApiTokenRevokedEvent`, all after the commit. A failing listener is logged and never undoes the revocation.
+- **Names** are unique per owner, case-insensitively (database unique index on `owner_type, owner_id, name_key`). The
+  live-token cap (`max_per_owner`) is checked inside the issue transaction; two concurrent issues may exceed it by one
+  or two (the S3 per-owner issue limiter bounds that).
 - **Inside your transaction:** called while your transaction is open on the same connection, the writes join it and
-  the listeners and events wait for your outermost commit (they are dropped on rollback).
+  the listeners and events wait for your outermost commit (they are dropped on rollback). Note that `issue()` then
+  returns the secret before your commit and `revoke()` answers true even if you later roll back: issue and revoke
+  outside your transaction, or after it commits, when that matters.
 
 Until S2 ships the firewall authenticator, call `ApiTokenAuthenticatorInterface::authenticate()` from your own
 authenticator with the `Authorization: Bearer` value; treat every `AuthFailure` the same towards the client.
 
 ## Console commands (S1)
 
+Both commands are registered from their `#[AsCommand]` attribute.
+
 | Command | What it does |
 | --- | --- |
 | `nowo:api-token:issue <owner-id> --name=… --grant=module:level [--flag=module:flag] [--reach=entry] [--days=N] [--owner-type=…]` | Issues a token through the same issuer (channel `cli`), for tests and break-glass. The secret is printed once on stdout; the summary goes to stderr |
-| `nowo:api-token:purge-expired` | Deletes the tokens that expired more than `expiry.purge_after_days` ago, in batches of `messenger.batch_size`, stopping after `messenger.max_seconds` (run it again for the rest). Expired tokens are refused from the moment they expire; the purge only removes rows |
+| `nowo:api-token:purge-expired` | Deletes the tokens that expired more than `expiry.purge_after_days` ago, paging by id (keyset) in batches of `messenger.batch_size`, stopping after `messenger.max_seconds` (run it again for the rest). Damaged expired rows are deleted too (without an event: they carry no readable payload). Logs start, success and failure. Expired tokens are refused from the moment they expire; the purge only removes rows. In 0.x the command purges directly; from S5 it enqueues a `PurgeExpiredApiTokensMessage` by default and `--sync` keeps the direct run |
 
 ## Events (S1)
 
@@ -148,3 +170,11 @@ narrows them.
 
 The principal lives only on the request attributes; no token, owner or reach is memoised across requests. See
 [FRANKENPHP-WORKER-AUDIT.md](FRANKENPHP-WORKER-AUDIT.md).
+
+## Translations
+
+The bundle ships its UI strings (used by the S3 pages) in the `NowoApiTokenBundle` translation domain for **seven
+locales**: English (`en`), Spanish (`es`), Italian (`it`), French (`fr`), Portuguese (`pt`), German (`de`) and Dutch
+(`nl`). To change a string, copy its key into your application's `translations/NowoApiTokenBundle.<locale>.yaml`
+(application translations win over the bundle's); to add a locale, create that file with every key of
+`NowoApiTokenBundle.en.yaml`. See [CONFIGURATION.md](CONFIGURATION.md#translations).

@@ -6,6 +6,7 @@ namespace Nowo\ApiTokenBundle\Tests\Integration\Kernel;
 
 use Closure;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\Filesystem\Filesystem;
 
@@ -32,11 +33,12 @@ abstract class KernelTestCase extends TestCase
     /**
      * @param array<string, mixed> $config `nowo_api_token` configuration
      * @param (Closure(ContainerConfigurator, string): void)|null $configure
+     * @param list<CompilerPassInterface> $passes
      */
-    protected function bootKernel(array $config = [], ?string $databaseUrl = null, ?Closure $configure = null, bool $authRoute = false): TestKernel
+    protected function bootKernel(array $config = [], ?string $databaseUrl = null, ?Closure $configure = null, bool $authRoute = false, array $passes = []): TestKernel
     {
         $id              = (string) preg_replace('/\W+/', '_', static::class . '_' . $this->name() . '_' . count($this->kernels));
-        $kernel          = new TestKernel($id, $config, $databaseUrl, $configure, $authRoute);
+        $kernel          = new TestKernel($id, $config, $databaseUrl, $configure, $authRoute, $passes);
         $this->kernels[] = $kernel;
         $kernel->boot();
 

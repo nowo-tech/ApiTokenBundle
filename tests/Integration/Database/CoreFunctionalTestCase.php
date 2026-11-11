@@ -27,7 +27,9 @@ use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\RevocationReason;
 use Nowo\ApiTokenBundle\Contract\TokenId;
+use Nowo\ApiTokenBundle\Domain\ApiToken;
 use Nowo\ApiTokenBundle\Domain\ApiTokenStoreInterface;
+use Nowo\ApiTokenBundle\Domain\LookupIdTakenException;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitQueue;
 use Nowo\ApiTokenBundle\Tests\Fixtures\Ddd\Member;
 use Nowo\ApiTokenBundle\Tests\Fixtures\QueryLog;
@@ -45,6 +47,7 @@ use function hash;
 use function json_encode;
 use function serialize;
 use function str_contains;
+use function str_repeat;
 use function strlen;
 use function substr;
 use function trim;
@@ -165,13 +168,13 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
     public function testIssueAuthenticateAndLastUsed(): void
     {
         $issued = $this->issue('alice', 'CI', ['tasks' => 'tasks', 'wiki' => 'read']);
-        self::assertStringStartsWith('nwt_', $issued->secret);
+        self::assertStringStartsWith('nwt_', $issued->secret());
 
         $issuedEvents = $this->listener()->of(ApiTokenIssuedEvent::class);
         self::assertCount(1, $issuedEvents);
         self::assertSame($issued->token->id->value, $issuedEvents[0]->tokenId->value);
 
-        $principal = $this->authenticator()->authenticate($issued->secret);
+        $principal = $this->authenticator()->authenticate($issued->secret());
         self::assertInstanceOf(ApiTokenPrincipal::class, $principal);
         self::assertTrue($principal->owner->equals($this->host()->owner('alice')));
         self::assertSame(['tasks' => 'tasks', 'wiki' => 'read'], $principal->grants->levels);
@@ -182,14 +185,14 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         self::assertSame(Host::NOW, $this->query()->find($issued->token->id)?->lastUsedAt?->format('Y-m-d H:i:s'));
 
         $this->clock()->modify('+30 seconds');
-        self::assertInstanceOf(ApiTokenPrincipal::class, $this->authenticator()->authenticate($issued->secret));
+        self::assertInstanceOf(ApiTokenPrincipal::class, $this->authenticator()->authenticate($issued->secret()));
         self::assertCount(1, $this->listener()->of(ApiTokenUsedEvent::class), 'throttled: no second write within 60 s');
         $this->clock()->modify('+31 seconds');
-        self::assertInstanceOf(ApiTokenPrincipal::class, $this->authenticator()->authenticate($issued->secret));
+        self::assertInstanceOf(ApiTokenPrincipal::class, $this->authenticator()->authenticate($issued->secret()));
         self::assertCount(2, $this->listener()->of(ApiTokenUsedEvent::class));
 
         foreach ($this->listener()->events as $event) {
-            self::assertStringNotContainsString($issued->secret, serialize($event));
+            self::assertStringNotContainsString($issued->secret(), serialize($event));
         }
     }
 
@@ -198,14 +201,14 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         $issued = $this->issue();
         $row    = $this->connection()->fetchAssociative('SELECT secret_hash, hash_version, lookup_id FROM ' . $this->table());
         self::assertIsArray($row);
-        self::assertSame(hash('sha256', $issued->secret), $row['secret_hash']);
+        self::assertSame(hash('sha256', $issued->secret()), $row['secret_hash']);
         self::assertSame(1, (int) $row['hash_version']);
         self::assertSame($issued->token->lookupId->value, $row['lookup_id']);
-        self::assertFalse(str_contains((string) json_encode($row), substr($issued->secret, -49)), 'the secret is not stored');
+        self::assertFalse(str_contains((string) json_encode($row), substr($issued->secret(), -49)), 'the secret is not stored');
 
         $this->queries()->clear();
-        $this->authenticator()->authenticate($issued->secret);
-        $this->authenticator()->authenticate($this->tampered($issued->secret));
+        $this->authenticator()->authenticate($issued->secret());
+        $this->authenticator()->authenticate($this->tampered($issued->secret()));
         foreach ($this->queries()->queries as $sql) {
             self::assertStringNotContainsString('secret_hash =', $sql);
             self::assertStringNotContainsString('secret_hash=', $sql);
@@ -218,12 +221,12 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         $codec  = new TokenCodec('nwt_');
 
         $this->queries()->clear();
-        self::assertSame(AuthFailure::Malformed, $this->authenticator()->authenticate($issued->secret . "\n"));
-        self::assertSame(AuthFailure::Malformed, $this->authenticator()->authenticate('bt_' . substr($issued->secret, 4)));
+        self::assertSame(AuthFailure::Malformed, $this->authenticator()->authenticate($issued->secret() . "\n"));
+        self::assertSame(AuthFailure::Malformed, $this->authenticator()->authenticate('bt_' . substr($issued->secret(), 4)));
         self::assertSame([], $this->queries()->queries, 'no query for malformed tokens');
 
-        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($codec->generate()->token));
-        self::assertSame(AuthFailure::WrongSecret, $this->authenticator()->authenticate($this->tampered($issued->secret)));
+        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($codec->generate()->token()));
+        self::assertSame(AuthFailure::WrongSecret, $this->authenticator()->authenticate($this->tampered($issued->secret())));
     }
 
     public function testExpiredAndInactiveOwners(): void
@@ -232,14 +235,80 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         $bob   = $this->issue('bob');
 
         $this->host()->deactivate($this->kernel, 'bob');
-        self::assertSame(AuthFailure::OwnerInactive, $this->authenticator()->authenticate($bob->secret));
+        self::assertSame(AuthFailure::OwnerInactive, $this->authenticator()->authenticate($bob->secret()));
         self::assertNotNull($this->query()->find($bob->token->id), 'a disabled account changes no row (Q-B7)');
 
         $this->host()->deleteUser($this->kernel, 'bob');
-        self::assertSame(AuthFailure::OwnerInactive, $this->authenticator()->authenticate($bob->secret), 'erased owner');
+        self::assertSame(AuthFailure::OwnerInactive, $this->authenticator()->authenticate($bob->secret()), 'erased owner');
 
         $this->clock()->modify('+1 day');
-        self::assertSame(AuthFailure::Expired, $this->authenticator()->authenticate($alice->secret));
+        self::assertSame(AuthFailure::Expired, $this->authenticator()->authenticate($alice->secret()));
+    }
+
+    /**
+     * Audit LW-M2: another process disables the account with a plain UPDATE while this kernel (worker) already holds
+     * the user in its EntityManager; the next authentication must see it, and resolving owners must not grow the
+     * identity map.
+     */
+    public function testADeactivationByAnotherProcessIsSeenAtOnce(): void
+    {
+        $bob = $this->issue('bob');
+        self::assertInstanceOf(ApiTokenPrincipal::class, $this->authenticator()->authenticate($bob->secret()));
+
+        $this->setActive('bob', false);
+        self::assertSame(AuthFailure::OwnerInactive, $this->authenticator()->authenticate($bob->secret()), 'managed user refreshed');
+        $this->setActive('bob', true);
+        self::assertInstanceOf(ApiTokenPrincipal::class, $this->authenticator()->authenticate($bob->secret()));
+
+        $em = $this->host()->entityManager($this->kernel);
+        $em->clear();
+        $size    = $em->getUnitOfWork()->size();
+        $results = [];
+        for ($i = 0; $i < 5; ++$i) {
+            $results[] = $this->authenticator()->authenticate($bob->secret());
+        }
+        self::assertContainsOnlyInstancesOf(ApiTokenPrincipal::class, $results);
+        if ($this->host()->kind === Host::STANDARD) {
+            self::assertSame($size, $em->getUnitOfWork()->size(), 'the default resolver detaches what it loaded');
+        }
+        $this->setActive('bob', false);
+        self::assertSame(AuthFailure::OwnerInactive, $this->authenticator()->authenticate($bob->secret()), 'detached user re-read');
+    }
+
+    /**
+     * Audit LW-L2: no token for an owner that does not exist or is not active.
+     */
+    public function testIssueNeedsAnExistingActiveOwner(): void
+    {
+        foreach (['ghost', 'bob'] as $owner) {
+            if ($owner === 'bob') {
+                $this->setActive('bob', false);
+            }
+            try {
+                $this->issue($owner);
+                self::fail('refused: ' . $owner);
+            } catch (ApiTokenIssueRefusedException $exception) {
+                self::assertSame(ApiTokenIssueRefusedException::OWNER, $exception->reason);
+            }
+        }
+        self::assertSame([], $this->query()->ofOwner($this->host()->owner('ghost')));
+    }
+
+    /**
+     * Audit LW-I3: the database refuses a second token with the same name (any case) for one owner, even past the
+     * issuer's own check (a concurrent issue).
+     */
+    public function testTheDatabaseKeepsNamesUniquePerOwner(): void
+    {
+        $issued = $this->issue('alice', 'Deploy');
+        $store  = $this->service(ApiTokenStoreInterface::class);
+        self::assertInstanceOf(ApiTokenStoreInterface::class, $store);
+        $now  = new DateTimeImmutable(Host::NOW);
+        $twin = static fn (string $owner, string $id, string $lookup): ApiToken => new ApiToken($id, $lookup, str_repeat('a', 64), 1, $issued->token->owner->type, $owner, 'DEPLOY', ['levels' => []], true, [], $now, $now->modify('+1 day'));
+
+        $store->insert($twin('bob', '01933b1c-5d2e-7a3b-8c4d-000000000001', 'bbbbbbbbbbbb'));
+        $this->expectException(LookupIdTakenException::class);
+        $store->insert($twin('alice', '01933b1c-5d2e-7a3b-8c4d-000000000002', 'cccccccccccc'));
     }
 
     public function testRevocationPaths(): void
@@ -252,11 +321,11 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
 
         self::assertFalse($this->revoker()->revoke($this->host()->owner('bob'), $one->token->id, RevocationReason::Owner), 'not the owner');
         self::assertTrue($this->revoker()->revoke($this->host()->owner('alice'), $one->token->id, RevocationReason::Owner));
-        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($one->secret), 'revoked = unknown');
+        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($one->secret()), 'revoked = unknown');
         self::assertTrue($this->revoker()->revokeAsOperator($two->token->id, $this->host()->owner('bob')));
         self::assertSame(1, $this->revoker()->revokeAll($this->host()->owner('alice'), RevocationReason::OwnerAll));
-        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($three->secret));
-        self::assertInstanceOf(ApiTokenPrincipal::class, $this->authenticator()->authenticate($bobs->secret));
+        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($three->secret()));
+        self::assertInstanceOf(ApiTokenPrincipal::class, $this->authenticator()->authenticate($bobs->secret()));
 
         $events = $this->listener()->of(ApiTokenRevokedEvent::class);
         self::assertCount(3, $events);
@@ -267,6 +336,8 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
 
     public function testOwnerIdsCompareExactlyInTheDatabase(): void
     {
+        $this->host()->createUser($this->kernel, 'UserA');
+        $this->host()->createUser($this->kernel, 'usera');
         $upper = $this->issuer()->issue(new IssueRequest($this->host()->owner('UserA'), 'n', new Grants(['tasks' => 'read']), Reach::everything(), 1));
         $lower = $this->issuer()->issue(new IssueRequest($this->host()->owner('usera'), 'n', new Grants(['tasks' => 'read']), Reach::everything(), 1));
 
@@ -285,14 +356,14 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         $issued = $this->issue('alice', 'CI', ['tasks' => 'read']);
         $this->connection()->update($this->table(), ['grants' => '{"levels":{"tasks":"read","ghost":"full","wiki":"superuser"},"flags":{"tasks":["x"]}}'], ['id' => $issued->token->id->value]);
 
-        $principal = $this->authenticator()->authenticate($issued->secret);
+        $principal = $this->authenticator()->authenticate($issued->secret());
         self::assertInstanceOf(ApiTokenPrincipal::class, $principal);
         self::assertSame(['tasks' => 'read'], $principal->grants->levels);
         self::assertSame([], $principal->grants->flags);
 
         // Valid JSON of the wrong shape (MySQL and PostgreSQL refuse invalid JSON text; the unit suite covers it).
         $this->connection()->update($this->table(), ['grants' => '"damaged"', 'reach_everything' => 1, 'reach' => '["bad entry"]'], ['id' => $issued->token->id->value], ['reach_everything' => Types::BOOLEAN]);
-        $principal = $this->authenticator()->authenticate($issued->secret);
+        $principal = $this->authenticator()->authenticate($issued->secret());
         self::assertInstanceOf(ApiTokenPrincipal::class, $principal);
         self::assertTrue($principal->grants->isEmpty());
         self::assertFalse($principal->reach->isEverything(), 'damaged reach fails closed');
@@ -303,7 +374,7 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         $issued = $this->issue();
         $this->connection()->update($this->table(), ['owner_type' => 'Bad Type'], ['id' => $issued->token->id->value]);
 
-        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($issued->secret));
+        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($issued->secret()));
         self::assertNull($this->query()->find($issued->token->id));
     }
 
@@ -329,7 +400,7 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
 
         $connection->beginTransaction();
         self::assertTrue($this->revoker()->revoke($this->host()->owner('alice'), $issued->token->id, RevocationReason::Owner));
-        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($issued->secret), 'deleted inside the open transaction');
+        self::assertSame(AuthFailure::Unknown, $this->authenticator()->authenticate($issued->secret()), 'deleted inside the open transaction');
         $connection->rollBack();
         self::assertNotNull($this->query()->find($issued->token->id), 'the revocation rolled back with the host');
         self::assertSame([], $this->listener()->of(ApiTokenRevokedEvent::class));
@@ -403,6 +474,26 @@ abstract class CoreFunctionalTestCase extends KernelTestCase
         $purged = $this->listener()->of(ApiTokenRevokedEvent::class);
         self::assertCount(2, $purged);
         self::assertSame(RevocationReason::Expired, $purged[0]->reason);
+
+        // Audit LW-I8: a damaged expired row is purged too (no event: there is no token to describe).
+        $damaged = $this->issue('bob', 'damaged', ['tasks' => 'read'], 1);
+        $this->connection()->update($this->table(), ['owner_type' => 'Bad Type'], ['id' => $damaged->token->id->value]);
+        $this->clock()->modify('+40 days');
+        $this->listener()->clear();
+        self::assertSame(0, $purge->execute([]));
+        self::assertStringContainsString('Purged 1 expired API token(s).', $purge->getDisplay());
+        self::assertSame([], $this->listener()->of(ApiTokenRevokedEvent::class));
+        self::assertFalse($this->connection()->fetchOne('SELECT id FROM ' . $this->table() . ' WHERE id = ?', [$damaged->token->id->value]));
+    }
+
+    private function setActive(string $id, bool $active): void
+    {
+        $connection = $this->connection();
+        if ($this->host()->kind === Host::STANDARD) {
+            $connection->update('app_user', ['active' => $active], ['id' => $id], ['active' => Types::BOOLEAN]);
+        } else {
+            $connection->update('ddd_member', ['suspended' => !$active], ['member_id' => $id], ['suspended' => Types::BOOLEAN]);
+        }
     }
 
     /**

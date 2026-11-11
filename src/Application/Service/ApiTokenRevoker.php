@@ -83,19 +83,47 @@ final readonly class ApiTokenRevoker implements ApiTokenRevokerInterface
     }
 
     /**
-     * Deletes the tokens that expired before `$cutoff`, in batches (one transaction each), reason
-     * {@see RevocationReason::Expired}; stops when `$continue` answers false between batches. Returns how many.
+     * Deletes the rows that expired before `$cutoff`, in keyset batches by id (one transaction each), reason
+     * {@see RevocationReason::Expired}; damaged rows are deleted too, without listeners or event (there is no token to
+     * describe). Stops when `$continue` answers false between batches. Returns how many rows went.
      *
      * @param Closure(): bool|null $continue
      */
     public function purgeExpired(DateTimeImmutable $cutoff, int $batchSize = self::BATCH, ?Closure $continue = null): int
     {
         $total = 0;
+        $after = null;
         do {
-            $batch   = $this->store->expiredBefore($cutoff, $batchSize);
-            $deleted = $batch === [] ? 0 : $this->deleteAll($batch, RevocationReason::Expired, null);
-            $total += $deleted;
-        } while ($deleted > 0 && count($batch) === $batchSize && (!$continue instanceof Closure || $continue()));
+            $batch = $this->store->expiredBatch($cutoff, $batchSize, $after);
+            if ($batch === []) {
+                break;
+            }
+            $after = $batch[count($batch) - 1]['id'];
+            /** @var array{count: int, tokens: list<ApiToken>} $deleted */
+            $deleted = $this->store->transactional(
+                // @igor-ignore - Closure passed to one transactional() call and released when it returns; never stored.
+                function () use ($batch): array {
+                    $count  = 0;
+                    $tokens = [];
+                    foreach ($batch as $row) {
+                        if ($this->store->deleteRow($row['id'])) {
+                            ++$count;
+                            if ($row['token'] instanceof ApiToken) {
+                                $tokens[] = $row['token'];
+                            }
+                        }
+                    }
+
+                    return ['count' => $count, 'tokens' => $tokens];
+                },
+                function (array $deleted): void {
+                    foreach ($deleted['tokens'] as $token) {
+                        $this->afterRevoke($token, RevocationReason::Expired, null);
+                    }
+                },
+            );
+            $total += $deleted['count'];
+        } while (count($batch) === $batchSize && (!$continue instanceof Closure || $continue()));
 
         return $total;
     }

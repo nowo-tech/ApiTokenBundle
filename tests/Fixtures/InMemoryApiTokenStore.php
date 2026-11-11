@@ -12,17 +12,19 @@ use Nowo\ApiTokenBundle\Contract\TokenId;
 use Nowo\ApiTokenBundle\Domain\ApiToken;
 use Nowo\ApiTokenBundle\Domain\ApiTokenStoreInterface;
 use Nowo\ApiTokenBundle\Domain\LookupIdTakenException;
+use RuntimeException;
 use Throwable;
 
 use function array_slice;
 use function array_values;
 use function strcmp;
+use function uksort;
 use function usort;
 
 /**
  * Unit-test store: no database. `$takenLookups` makes the next inserts collide; `$lookups` counts lookups.
  */
-final class InMemoryApiTokenStore implements ApiTokenStoreInterface
+class InMemoryApiTokenStore implements ApiTokenStoreInterface
 {
     /** @var array<string, ApiToken> */
     public array $tokens = [];
@@ -32,6 +34,8 @@ final class InMemoryApiTokenStore implements ApiTokenStoreInterface
     public int $lookups = 0;
 
     public bool $touchResult = true;
+
+    public bool $failDeletes = false;
 
     public ?Throwable $touchFailure = null;
 
@@ -123,16 +127,36 @@ final class InMemoryApiTokenStore implements ApiTokenStoreInterface
         return array_slice($found, 0, $limit);
     }
 
-    public function expiredBefore(DateTimeImmutable $cutoff, int $limit): array
+    /** @var array<string, DateTimeImmutable> raw id => expiry of damaged rows (no token) */
+    public array $damaged = [];
+
+    public function expiredBatch(DateTimeImmutable $cutoff, int $limit, ?string $afterId = null): array
     {
         $found = [];
-        foreach ($this->tokens as $token) {
-            if ($token->expiresAt() < $cutoff) {
-                $found[] = $token;
+        foreach ($this->tokens as $id => $token) {
+            if ($token->expiresAt() < $cutoff && ($afterId === null || strcmp((string) $id, $afterId) > 0)) {
+                $found[(string) $id] = ['id' => (string) $id, 'token' => $token];
             }
         }
+        foreach ($this->damaged as $id => $expiresAt) {
+            if ($expiresAt < $cutoff && ($afterId === null || strcmp((string) $id, $afterId) > 0)) {
+                $found[(string) $id] = ['id' => (string) $id, 'token' => null];
+            }
+        }
+        uksort($found, 'strcmp');
 
-        return array_slice($found, 0, $limit);
+        return array_slice(array_values($found), 0, $limit);
+    }
+
+    public function deleteRow(string $id): bool
+    {
+        if ($this->failDeletes) {
+            throw new RuntimeException('database down');
+        }
+        $exists = isset($this->tokens[$id]) || isset($this->damaged[$id]);
+        unset($this->tokens[$id], $this->damaged[$id]);
+
+        return $exists;
     }
 
     public function touchLastUsed(TokenId $id, DateTimeImmutable $now, DateTimeImmutable $olderThan): bool

@@ -6,7 +6,7 @@ COMPOSE_BIN := $(shell docker compose version >/dev/null 2>&1 && echo "docker co
 COMPOSE     := $(COMPOSE_BIN) -f $(COMPOSE_FILE)
 SERVICE_PHP := php
 
-.PHONY: help up down restart build install shell logs setup db-schema cache-clear update-bundle ensure-up test
+.PHONY: help up down restart build install shell logs setup db-schema cache-clear update-bundle update-deps ensure-up test test-coverage verify
 
 help:
 	@echo "API Token Bundle Demo - Symfony 8"
@@ -21,6 +21,11 @@ help:
 	@echo "  make db-schema    Update schema"
 	@echo "  make cache-clear  Clear Symfony cache"
 	@echo "  make update-bundle Update bundle from path repo"
+	@echo "  make update-deps  composer update in a one-off container (REQ-MAKE-008)"
+	@echo "  make restart      Restart containers"
+	@echo "  make test         Lint the container and the Twig templates"
+	@echo "  make test-coverage Same as test (the demo has no PHPUnit suite)"
+	@echo "  make verify       HTTP 200 on / (demo must be up)"
 	@echo ""
 
 up:
@@ -94,3 +99,15 @@ update-bundle: ensure-up
 test: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) php bin/console lint:container
 	$(COMPOSE) exec -T $(SERVICE_PHP) php bin/console lint:twig templates
+
+# REQ-MAKE-003: the demo has no PHPUnit suite, so coverage is the same lint.
+test-coverage: test
+
+# REQ-MAKE-003: final check, HTTP 200 on / of the running demo.
+verify:
+	@PORT=$$(grep "^PORT=" .env 2>/dev/null | cut -d= -f2 | tr -d '\r'); [ -z "$$PORT" ] && PORT=8221; \
+	code=$$(curl -sL -o /dev/null -w "%{http_code}" "http://127.0.0.1:$$PORT/" 2>/dev/null || echo 000); \
+	if [ "$$code" != "200" ]; then echo "verify failed (HTTP $$code)"; exit 1; fi; echo "verify OK (HTTP $$code)"
+
+# REQ-MAKE-008: update-deps (soft include; the shared script exists in the bundles workspace, not on a CI checkout).
+-include $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../.scripts/Makefile.demo-update-deps.mk)

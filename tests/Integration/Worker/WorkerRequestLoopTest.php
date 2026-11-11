@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\ApiTokenBundle\Tests\Integration\Worker;
 
+use Doctrine\DBAL\Types\Types;
 use LogicException;
 use Nowo\ApiTokenBundle\Contract\ApiTokenIssuerInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenRevokerInterface;
@@ -76,14 +77,14 @@ final class WorkerRequestLoopTest extends KernelTestCase
         $clock = $container->get('clock');
         self::assertInstanceOf(MockClock::class, $clock);
         $clock->modify('+1 day');
-        $wrong = substr($a1->secret, 0, 20) . ($a1->secret[20] === 'a' ? 'b' : 'a') . substr($a1->secret, 21);
+        $wrong = substr($a1->secret(), 0, 20) . ($a1->secret()[20] === 'a' ? 'b' : 'a') . substr($a1->secret(), 21);
 
         $cases = [
-            ['token' => $a1->secret, 'owner' => 'user:alice', 'id' => $a1->token->id->value, 'grants' => ['tasks' => 'read']],
-            ['token' => $b1->secret, 'owner' => 'user:bob', 'id' => $b1->token->id->value, 'grants' => ['tasks' => 'tasks']],
+            ['token' => $a1->secret(), 'owner' => 'user:alice', 'id' => $a1->token->id->value, 'grants' => ['tasks' => 'read']],
+            ['token' => $b1->secret(), 'owner' => 'user:bob', 'id' => $b1->token->id->value, 'grants' => ['tasks' => 'tasks']],
             ['token' => $wrong, 'failure' => 'malformed'],
-            ['token' => $a2->secret, 'owner' => 'user:alice', 'id' => $a2->token->id->value, 'grants' => ['tasks' => 'full']],
-            ['token' => $short->secret, 'failure' => 'expired'],
+            ['token' => $a2->secret(), 'owner' => 'user:alice', 'id' => $a2->token->id->value, 'grants' => ['tasks' => 'full']],
+            ['token' => $short->secret(), 'failure' => 'expired'],
             ['token' => '', 'failure' => 'missing'],
         ];
 
@@ -91,7 +92,7 @@ final class WorkerRequestLoopTest extends KernelTestCase
         for ($i = 0; $i < self::REQUESTS; ++$i) {
             if ($i === 1000) {
                 self::assertTrue($revoker->revoke($host->owner('alice'), $a2->token->id, RevocationReason::Owner));
-                $cases[3] = ['token' => $a2->secret, 'failure' => 'unknown'];
+                $cases[3] = ['token' => $a2->secret(), 'failure' => 'unknown'];
             }
             $case  = $cases[$i % 6];
             $token = $case['token'];
@@ -121,6 +122,43 @@ final class WorkerRequestLoopTest extends KernelTestCase
         gc_collect_cycles();
 
         self::assertLessThan(1024 * 1024, memory_get_usage() - $baseline, 'memory stays flat over ' . self::REQUESTS . ' requests');
+    }
+
+    /**
+     * Audit LW-M2 / REQ-RUNTIME-002: one kernel kept alive; an admin or another worker disables the account with a
+     * plain SQL UPDATE; the very next request is refused, and re-enabling it brings the token back.
+     */
+    public function testADeactivationBySqlIsRefusedOnTheNextRequest(): void
+    {
+        $host   = Host::standard();
+        $kernel = $this->bootKernel($host->bundleConfig(), Host::databaseUrl(), $host->configure(), true);
+        $host->resetSchema($kernel);
+        $host->createUser($kernel, 'alice');
+        $container = $kernel->getContainer()->get('test.service_container');
+        self::assertInstanceOf(ContainerInterface::class, $container);
+        $issuer = $container->get(ApiTokenIssuerInterface::class);
+        $http   = $kernel->getContainer()->get('http_kernel');
+        self::assertInstanceOf(ApiTokenIssuerInterface::class, $issuer);
+        self::assertInstanceOf(HttpKernelInterface::class, $http);
+        self::assertInstanceOf(TerminableInterface::class, $http);
+        $secret     = $issuer->issue(new IssueRequest($host->owner('alice'), 'w', new Grants(['tasks' => 'read']), Reach::everything(), 30))->secret();
+        $connection = $host->entityManager($kernel)->getConnection();
+        $call       = static function () use ($http, $secret): int {
+            $request  = Request::create('/auth', 'GET', server: ['HTTP_AUTHORIZATION' => 'Bearer ' . $secret]);
+            $response = $http->handle($request, HttpKernelInterface::MAIN_REQUEST, false);
+            $http->terminate($request, $response);
+
+            return $response->getStatusCode();
+        };
+
+        for ($i = 0; $i < 3; ++$i) {
+            self::assertSame(200, $call());
+        }
+        $connection->update('app_user', ['active' => false], ['id' => 'alice'], ['active' => Types::BOOLEAN]);
+        self::assertSame(401, $call(), 'disabled by SQL: refused on the next request');
+        self::assertSame(401, $call());
+        $connection->update('app_user', ['active' => true], ['id' => 'alice'], ['active' => Types::BOOLEAN]);
+        self::assertSame(200, $call());
     }
 
     public function testHeldAfterCommitWorkIsDroppedAtEveryBoundary(): void

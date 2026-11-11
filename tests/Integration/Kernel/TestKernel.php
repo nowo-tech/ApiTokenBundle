@@ -12,6 +12,9 @@ use Nowo\ApiTokenBundle\Tests\Fixtures\EchoController;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Bundle\SecurityBundle\SecurityBundle;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
@@ -20,7 +23,7 @@ use function dirname;
 use function sys_get_temp_dir;
 
 /**
- * Standard-host kernel of the integration tests: FrameworkBundle, the bundle and, on demand, DoctrineBundle (DBAL
+ * Standard-host kernel of the integration tests: FrameworkBundle, SecurityBundle, the bundle and, on demand, DoctrineBundle (DBAL
  * only, or what `$configure` sets up: ORM, host fixtures). `/echo` answers the request's `X-Test-Owner` header and the
  * bundle's API prefix parameter; `/auth` (with `$authRoute`) authenticates the Authorization header.
  */
@@ -39,6 +42,8 @@ final class TestKernel extends Kernel
         private readonly ?string $databaseUrl = null,
         private readonly ?Closure $configure = null,
         private readonly bool $authRoute = false,
+        /** @var list<CompilerPassInterface> host compiler passes (e.g. UserKit's account-status wiring) */
+        private readonly array $passes = [],
     ) {
         parent::__construct('test', false);
     }
@@ -46,10 +51,21 @@ final class TestKernel extends Kernel
     public function registerBundles(): iterable
     {
         yield new FrameworkBundle();
+        if ($this->configure instanceof Closure) {
+            // Host fixtures configure security (a firewall and its user checker, audit LW-M1).
+            yield new SecurityBundle();
+        }
         if ($this->databaseUrl !== null) {
             yield new DoctrineBundle();
         }
         yield new NowoApiTokenBundle();
+    }
+
+    protected function build(ContainerBuilder $container): void
+    {
+        foreach ($this->passes as $pass) {
+            $container->addCompilerPass($pass);
+        }
     }
 
     public function getProjectDir(): string

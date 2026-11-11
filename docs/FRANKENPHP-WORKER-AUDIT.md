@@ -29,6 +29,7 @@ resetter between requests.
 | Mutable state in shared services | ✅ | Only `AfterCommitQueue` (held after-commit work of an open host transaction, weak-keyed by connection) |
 | `ResetInterface` / `kernel.reset` | ✅ | `AfterCommitQueue` implements it and is also cleared on `kernel.finish_request` (main request), `kernel.terminate`, `console.terminate`, `WorkerMessageHandledEvent` and `WorkerMessageFailedEvent`; `WorkerRequestLoopTest` covers each path |
 | Cross-owner leakage | ✅ | `WorkerRequestLoopTest`: one kernel, 2,000 requests, two owners and four tokens alternating (valid, wrong checksum, expired, revoked mid-run, missing); each sees only its own principal and the refused ones none |
+| Stale identity (host EntityManager) | ✅ | The default `DoctrineOwnerResolver` re-reads the user with a refresh query on every call and detaches it again when it loaded it, so an account disabled by another process or worker is refused on the next request and the host's identity map does not grow per owner (audit LW-M2); the worker test disables an owner by direct SQL mid-run. DDD resolvers must not answer from a cache or an identity map |
 | Memory growth | ✅ | < 1 MiB drift after warm-up over 2,000 requests |
 | Static properties / `static` locals | ✅ | None (the bundle's extension instance is the Symfony boot-time cache, `@igor-ignore` with justification) |
 | Superglobals, `putenv`, `ini_set`, `setlocale`, timezone | ✅ | None |
@@ -43,7 +44,7 @@ resetter between requests.
 | `DependencyInjection\NowoApiTokenExtension`, `Configuration`, `ConfigNodes`, `Compiler\RequireDoctrinePass` | Container build only | ✅ |
 | `ApiTokenIssuer`, `ApiTokenRevoker`, `ApiTokenQuery`, `ApiTokenAuthenticator`, `TokenCodec`, `TokenHasher` | `final readonly`, injected collaborators and scalars only | ✅ (Igor's closure / clock notes are `@igor-ignore` with a reason: closures passed to one call, immutable dates) |
 | `ModuleRegistry` | Built once from config and tagged providers, immutable | ✅ |
-| `DbalApiTokenStore`, `ApiTokenMetadataListener`, `DoctrineOwnerResolver`, `UserCheckerOwnerStatus`, config defaults | `final readonly`, no memo; owner and status read on every call | ✅ |
+| `DbalApiTokenStore`, `ApiTokenMetadataListener`, `DoctrineOwnerResolver`, `UserCheckerOwnerStatus`, config defaults | `final readonly`, no memo; owner re-read from the database and status checked with the host's user checkers on every call | ✅ |
 | `AfterCommitQueue`, `AfterCommitMiddleware`, `AfterCommitQueueResetListener` | Request-scoped held work, cleared at every boundary | ✅ |
 | `IssueTokenCommand`, `PurgeExpiredTokensCommand` | Console only, no state between runs | ✅ |
 

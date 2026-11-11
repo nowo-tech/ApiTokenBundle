@@ -39,7 +39,7 @@ final class DbalApiTokenStoreTest extends TestCase
     protected function setUp(): void
     {
         $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $this->connection->executeStatement('CREATE TABLE nowo_api_token (id VARCHAR(36) PRIMARY KEY, lookup_id VARCHAR(12) NOT NULL UNIQUE, secret_hash VARCHAR(64), hash_version VARCHAR(8), owner_type VARCHAR(32), owner_id VARCHAR(128), name VARCHAR(80), grants CLOB, reach_everything BOOLEAN, reach CLOB, created_at VARCHAR(40), expires_at VARCHAR(40), last_used_at VARCHAR(40), created_via VARCHAR(16), legacy_hash VARCHAR(64))');
+        $this->connection->executeStatement('CREATE TABLE nowo_api_token (id VARCHAR(36) PRIMARY KEY, lookup_id VARCHAR(12) NOT NULL UNIQUE, secret_hash VARCHAR(64), hash_version VARCHAR(8), owner_type VARCHAR(32), owner_id VARCHAR(128), name VARCHAR(80), name_key VARCHAR(80), grants CLOB, reach_everything BOOLEAN, reach CLOB, created_at VARCHAR(40), expires_at VARCHAR(40), last_used_at VARCHAR(40), created_via VARCHAR(16), legacy_hash VARCHAR(64))');
     }
 
     public function testFallsBackToTheDbalConnectionOfThatName(): void
@@ -114,6 +114,23 @@ final class DbalApiTokenStoreTest extends TestCase
         self::assertNull($store->findByLookupId(new LookupId('dddddddddddd')));
         self::assertNull($store->findByLookupId(new LookupId('ffffffffffff')));
         self::assertCount(4, $logger->records);
+    }
+
+    public function testExpiredBatchesPageByIdAndKeepDamagedRows(): void
+    {
+        $store = $this->store($this->registry($this->connection));
+        $store->insert($this->token());
+        $this->connection->insert('nowo_api_token', ['id' => 'zz-damaged', 'lookup_id' => 'zzzzzzzzzzzz', 'hash_version' => '1', 'created_at' => '2026-01-01 00:00:00', 'expires_at' => '2026-01-02 00:00:00']);
+        $cutoff = new DateTimeImmutable('2028-01-01 00:00:00', new DateTimeZone('UTC'));
+
+        $first = $store->expiredBatch($cutoff, 1);
+        self::assertSame(self::ID, $first[0]['id'] ?? null);
+        self::assertNotNull($first[0]['token'] ?? null);
+        $second = $store->expiredBatch($cutoff, 1, self::ID);
+        self::assertSame([['id' => 'zz-damaged', 'token' => null]], $second);
+        self::assertSame([], $store->expiredBatch($cutoff, 1, 'zz-damaged'));
+        self::assertTrue($store->deleteRow('zz-damaged'));
+        self::assertFalse($store->deleteRow('zz-damaged'));
     }
 
     public function testALostConnectionIsRetriedOnceOutsideATransaction(): void

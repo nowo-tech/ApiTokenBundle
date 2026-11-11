@@ -120,7 +120,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         $container->setParameter(self::ALIAS . '.enabled', $config['enabled']);
         $container->setParameter(self::ALIAS . '.api_prefix', $config['api']['prefix']);
         $container->setParameter(self::ALIAS . '.table_prefix', $config['doctrine']['table_prefix']);
-        $container->setParameter(self::ALIAS . '.config', $config);
+        $container->setParameter(self::ALIAS . '.config', $this->redacted($config));
         if (!$config['enabled']) {
             return;
         }
@@ -135,7 +135,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
     {
         /** @var array{entity_manager: string, table_prefix: string} $doctrine */
         $doctrine = $config['doctrine'];
-        /** @var array{type: string, class: string|null, id_field: string, resolver: string|null, status: string|null} $owner */
+        /** @var array{type: string, class: string|null, id_field: string, resolver: string|null, status: string|null, user_checker: string|null} $owner */
         $owner = $config['owner'];
         /** @var array{default_days: int, max_days: int, purge_after_days: int} $expiry */
         $expiry = $config['expiry'];
@@ -192,12 +192,15 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         $this->service($container, ReachProviderInterface::class, $reach['provider'], new Definition(NoReachChoices::class));
         $this->service($container, ApiTokenPolicyInterface::class, null, (new Definition(ConfigApiTokenPolicy::class))->setArguments([new Reference(ModuleRegistry::class), $expiry['max_days']]));
         $this->service($container, OwnerResolverInterface::class, $owner['resolver'], (new Definition(DoctrineOwnerResolver::class))->setArguments([new Reference('doctrine'), $owner['class'], $owner['id_field'], $owner['type']]));
-        $this->service($container, OwnerStatusInterface::class, $owner['status'], (new Definition(UserCheckerOwnerStatus::class))->setArguments([new Reference('security.user_checker', ContainerInterface::IGNORE_ON_INVALID_REFERENCE)]));
+        // The checkers are set by OwnerUserCheckerPass (the host's firewall checkers, or owner.user_checker).
+        $this->service($container, OwnerStatusInterface::class, $owner['status'], (new Definition(UserCheckerOwnerStatus::class))->setArguments([[]]));
+        $container->setParameter(self::ALIAS . '.owner_status', ['custom' => $owner['status'] !== null, 'user_checker' => $owner['user_checker']]);
 
         $store = new Reference(ApiTokenStoreInterface::class);
         $container->register(ApiTokenIssuer::class, ApiTokenIssuer::class)->setArguments([
             $store, new Reference(TokenCodec::class), new Reference(TokenHasherInterface::class), new Reference(ModuleRegistry::class),
             new Reference(ApiTokenPolicyInterface::class), new Reference(ReachProviderInterface::class), new Reference(ApiTokenSettingsProviderInterface::class),
+            new Reference(OwnerResolverInterface::class), new Reference(OwnerStatusInterface::class),
             $dispatcher, $maxPerOwner, $expiry['max_days'], $reach['allow_everything'], $reach['max_entries'], $clock,
         ]);
         $container->setAlias(ApiTokenIssuerInterface::class, ApiTokenIssuer::class)->setPublic(true);
@@ -213,12 +216,29 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         ]);
         $container->setAlias(ApiTokenAuthenticatorInterface::class, ApiTokenAuthenticator::class)->setPublic(true);
 
+        // Registered from their #[AsCommand] attribute (REQ-SF-003): autoconfiguration adds the console tag.
         $container->register(IssueTokenCommand::class, IssueTokenCommand::class)
-            ->setArguments([new Reference(ApiTokenIssuerInterface::class), $owner['type'], $expiry['default_days']])
-            ->addTag('console.command', ['command' => 'nowo:api-token:issue']);
+            ->setAutoconfigured(true)
+            ->setArguments([new Reference(ApiTokenIssuerInterface::class), $owner['type'], $expiry['default_days']]);
         $container->register(PurgeExpiredTokensCommand::class, PurgeExpiredTokensCommand::class)
-            ->setArguments([new Reference(ApiTokenRevoker::class), $expiry['purge_after_days'], $messenger['batch_size'], $messenger['max_seconds'], $clock])
-            ->addTag('console.command', ['command' => 'nowo:api-token:purge-expired']);
+            ->setAutoconfigured(true)
+            ->setArguments([new Reference(ApiTokenRevoker::class), $expiry['purge_after_days'], $messenger['batch_size'], $messenger['max_seconds'], $clock, $logger]);
+    }
+
+    /**
+     * The processed tree without secrets (the pepper never sits in a container parameter, LW-I6).
+     *
+     * @param array<string, mixed> $config
+     *
+     * @return array<string, mixed>
+     */
+    private function redacted(array $config): array
+    {
+        if (is_array($config['hash'] ?? null) && ($config['hash']['pepper'] ?? null) !== null) {
+            $config['hash']['pepper'] = '[redacted]';
+        }
+
+        return $config;
     }
 
     /**

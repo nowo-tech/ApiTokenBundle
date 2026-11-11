@@ -7,12 +7,15 @@ the other values.
 
 `enabled: true` (S1) needs DoctrineBundle and an owner: `owner.class` (your user entity, for the default Doctrine
 resolver) or `owner.resolver` (an `OwnerResolverInterface` service); the container refuses to build otherwise, with a
-message that says so.
+message that says so. It also needs a real account-status check: see [Owner status](#owner-status).
 
 ## Table of contents
 
 - [Full reference](#full-reference)
+- [Owner status](#owner-status)
+- [Changes that invalidate every token](#changes-that-invalidate-every-token)
 - [Container parameters](#container-parameters)
+- [Translations](#translations)
 - [Validation rules](#validation-rules)
 
 ## Full reference
@@ -24,7 +27,7 @@ nowo_api_token:
     checksum: true                       # CRC32 base62 suffix (Q-O3)
     hash: { version: 1, pepper: null }   # 2 = HMAC-SHA256, pepper required (read it from an environment variable)
     doctrine: { entity_manager: default, table_prefix: 'nowo_', auto_mapping: true, mapping: xml }   # mapping: xml | attribute
-    owner: { type: user, class: null, id_field: id, resolver: null, status: null }
+    owner: { type: user, class: null, id_field: id, resolver: null, status: null, user_checker: null }   # user_checker: null (auto) | service id | 'none'
     modules:                             # merged with bridge-provided modules
         # reports: { levels: [read], flags: [], label: 'Reports' }
     bridges: { task_board: auto, wiki: auto, mcp_kit: auto, time_track: false, http_log: auto, user_kit: auto, audit_kit: auto, auth_kit: auto }
@@ -76,6 +79,34 @@ S1 service ids (all public aliases a host may replace through the keys above or 
 `Nowo\ApiTokenBundle\Contract`. Services implementing `TokenRevocationListenerInterface` or
 `ModuleDefinitionProviderInterface` are tagged automatically (autoconfiguration).
 
+## Owner status
+
+Every authentication (and every issue) asks whether the token's owner is still active. The default
+`UserCheckerOwnerStatus` runs a Symfony user checker's `checkPreAuth()` (an `AccountStatusException` means inactive):
+
+| `owner.status` | `owner.user_checker` | Checker used |
+| --- | --- | --- |
+| null | null (default) | **Auto:** the user checker of every firewall (`security.user_checker.<firewall>`), chained, so your own checker and UserKit's `AccountStatusUserChecker` are consulted. The container refuses to build when no firewall has a checker other than Symfony's stock `security.user_checker` (`InMemoryUserChecker`, which checks nothing for entity users) |
+| null | a service id | That `UserCheckerInterface` service only (e.g. `App\Security\UserChecker`, or `security.user_checker.chain.api`) |
+| null | `none` | No checker: an owner the resolver finds is active. Explicit opt-out for hosts without account states |
+| a service id | (ignored) | Your `OwnerStatusInterface` (DDD hosts) |
+
+With a checker, a user object that is not a Symfony `UserInterface` is **inactive** (fail closed). The default Doctrine
+resolver re-reads the user from the database on every call, so a deactivation by another process takes effect on the
+next request.
+
+## Changes that invalidate every token
+
+There is no key rotation in 0.x. Each of these changes makes **every existing token** fail at once (their stored hash
+or their prefix no longer matches), so plan it as a forced re-issue and warn your users first:
+
+- changing `hash.pepper`;
+- going from `hash.version: 2` back to `1` (or removing the pepper);
+- changing `token_prefix`.
+
+Switching from `hash.version: 1` to `2` keeps the existing version-1 tokens working (each row stores its version);
+only new tokens use HMAC.
+
 ## Container parameters
 
 | Parameter | Value |
@@ -83,7 +114,15 @@ S1 service ids (all public aliases a host may replace through the keys above or 
 | `nowo_api_token.enabled` | `enabled` |
 | `nowo_api_token.api_prefix` | `api.prefix`: derive firewall patterns from it, e.g. `^%nowo_api_token.api_prefix%/(tasks\|wiki\|tokens)/` |
 | `nowo_api_token.table_prefix` | `doctrine.table_prefix` |
-| `nowo_api_token.config` | the processed tree |
+| `nowo_api_token.config` | the processed tree, with `hash.pepper` redacted (the pepper stays only in the hasher service) |
+
+## Translations
+
+The bundle's UI strings (S3 pages) use the translation domain `NowoApiTokenBundle` and ship in **seven locales**: `en`,
+`es`, `it`, `fr`, `pt`, `de`, `nl` (`src/Resources/translations/NowoApiTokenBundle.<locale>.yaml`, key parity checked by
+`make validate-translations`). To override a string, put the same key in your application's
+`translations/NowoApiTokenBundle.<locale>.yaml`; application translations win over bundle ones. To add a locale, create
+that file in your application with every key of the English catalogue.
 
 ## Validation rules
 
@@ -97,4 +136,5 @@ S1 service ids (all public aliases a host may replace through the keys above or 
 - Tri-state switches (`bridges.*`): `true`, `false` or `"auto"` (on when the integration is installed).
 - Paths (`api.prefix`, `web_ui.path_prefix`, `admin_ui.path_prefix`): absolute, no trailing slash.
 - Rate-limit intervals: `<n> second|minute|hour|day[s]`; schedules: five-field cron expressions.
-- Service ids (`owner.resolver`, `reauth.gate`, …): null or a non-empty string.
+- Service ids (`owner.resolver`, `owner.status`, `reauth.gate`, …): null or a non-empty string; `owner.user_checker`:
+  null, `none` or a service id.

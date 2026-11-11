@@ -111,6 +111,7 @@ final readonly class DbalApiTokenStore implements ApiTokenStoreInterface
                 'owner_type'       => $token->owner()->type,
                 'owner_id'         => $token->owner()->id,
                 'name'             => $token->name(),
+                'name_key'         => $token->nameKey(),
                 'grants'           => json_encode($token->grants()->toArray(), JSON_THROW_ON_ERROR),
                 'reach_everything' => $token->reach()->isEverything(),
                 'reach'            => json_encode($token->reach()->storedEntries(), JSON_THROW_ON_ERROR),
@@ -124,7 +125,7 @@ final readonly class DbalApiTokenStore implements ApiTokenStoreInterface
                 'reach_everything' => Types::BOOLEAN,
             ]);
         } catch (UniqueConstraintViolationException $exception) {
-            throw new LookupIdTakenException('The lookup id or the token id already exists.', 0, $exception);
+            throw new LookupIdTakenException('The lookup id, the token id or the owner\'s token name already exists.', 0, $exception);
         }
     }
 
@@ -215,13 +216,28 @@ final readonly class DbalApiTokenStore implements ApiTokenStoreInterface
     /**
      * {@inheritDoc}
      */
-    public function expiredBefore(DateTimeImmutable $cutoff, int $limit): array
+    public function expiredBatch(DateTimeImmutable $cutoff, int $limit, ?string $afterId = null): array
     {
-        return $this->many(
-            sprintf('SELECT %s FROM %s WHERE expires_at < ? ORDER BY expires_at ASC, id ASC', self::COLUMNS, $this->table),
-            [$this->utc($cutoff)],
-            $limit,
-        );
+        $sql    = sprintf('SELECT %s FROM %s WHERE expires_at < ?%s ORDER BY id ASC', self::COLUMNS, $this->table, $afterId === null ? '' : ' AND id > ?');
+        $params = $afterId === null ? [$this->utc($cutoff)] : [$this->utc($cutoff), $afterId];
+        $rows   = $this->read(static fn (Connection $c): array => $c->fetchAllAssociative($c->getDatabasePlatform()->modifyLimitQuery($sql, $limit), $params));
+        $batch  = [];
+        foreach ($rows as $row) {
+            $id = $row['id'] ?? null;
+            if (is_string($id)) {
+                $batch[] = ['id' => $id, 'token' => $this->hydrate($row)];
+            }
+        }
+
+        return $batch;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function deleteRow(string $id): bool
+    {
+        return (int) $this->connection()->delete($this->table, ['id' => $id]) > 0;
     }
 
     /**

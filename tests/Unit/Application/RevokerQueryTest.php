@@ -130,6 +130,22 @@ final class RevokerQueryTest extends ServiceTestCase
         self::assertSame(RevocationReason::Expired, $reasons[0]);
     }
 
+    public function testPurgeRemovesDamagedRowsAndPagesPastThem(): void
+    {
+        // Audit LW-I8: damaged rows at the head of the batch neither stall the purge nor survive it.
+        $old = $this->clock->now()->modify('-1 day');
+        foreach (['00000000-damaged-a', '00000000-damaged-b', '00000000-damaged-c'] as $id) {
+            $this->store->damaged[$id] = $old;
+        }
+        $this->issue(new OwnerRef('user', '1'), 'n', ['tasks' => 'read'], 1);
+        $this->clearEvents();
+
+        self::assertSame(4, $this->revoker()->purgeExpired($this->clock->now()->modify('+3 days'), 2));
+        self::assertSame([], $this->store->damaged);
+        self::assertSame([], $this->store->tokens);
+        self::assertCount(1, $this->events(), 'one event: the damaged rows have no token to describe');
+    }
+
     public function testQuery(): void
     {
         $owner = new OwnerRef('user', '1');

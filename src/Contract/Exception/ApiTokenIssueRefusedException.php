@@ -16,6 +16,9 @@ final class ApiTokenIssueRefusedException extends RuntimeException
     /** The owner may not issue tokens ({@see ApiTokenPolicyInterface::mayIssue()}). */
     public const POLICY = 'policy';
 
+    /** The owner does not exist (resolver) or is not active (owner status). */
+    public const OWNER = 'owner';
+
     /** The owner already has `max_per_owner` live tokens. */
     public const TOO_MANY = 'too_many';
 

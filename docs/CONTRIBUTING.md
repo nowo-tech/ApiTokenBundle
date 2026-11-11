@@ -6,7 +6,7 @@
 - [Development setup](#development-setup)
 - [Code style](#code-style)
 - [Pull requests](#pull-requests)
-- [Demo, e2e and screenshots](#demo-e2e-and-screenshots)
+- [Demo](#demo)
 - [Cursor Agent](#cursor-agent)
 - [Git hooks (REQ-GIT-001)](#git-hooks-req-git-001)
 
@@ -18,7 +18,7 @@ This project follows the [Contributor Covenant Code of Conduct](../CODE_OF_CONDU
 
 1. Clone the repository.
 2. Start the dev container: `make up` then `make install`.
-3. Run tests: `make test`, `make test-coverage-100`, `make cs-check`, `make phpstan`, `make validate-phpdoc`, `make igor`.
+3. Run tests: `make test`, `make test-coverage-100`, `make test-with-db` (MySQL service, profile `db`), `make cs-check`, `make phpstan`, `make validate-phpdoc`, `make igor`.
 4. Pre-release: `make release-check`.
 
 ## Code style
@@ -34,17 +34,18 @@ This project follows the [Contributor Covenant Code of Conduct](../CODE_OF_CONDU
 - Ensure `make release-check` passes.
 - Keep the changelog and docs updated when behaviour or config changes.
 
-## Demo, e2e and screenshots
+## Demo
 
 ```bash
-make -C demo up-symfony8   # FrankenPHP + MySQL on http://localhost:8221
-make test-e2e              # Playwright (demo/symfony8/e2e, official Playwright image, 1 worker)
-make demo-screenshots      # refresh docs/images/demo/*.webp (PNG → WebP with sharp, PNGs deleted)
+make -C demo up-symfony8   # FrankenPHP + MySQL on http://localhost:8221 (Web Profiler, Twig Inspector, Hot Reload)
+make -C demo/symfony8 verify
 make demo-smoke            # boot, HTTP 200, down
 make -C demo down-symfony8
 ```
 
-Screenshots must show the demo masthead, the bundle output and the Symfony web debug toolbar (REQ-DEMO-013).
+Playwright e2e (`make test-e2e`) and WebP screenshots (`make demo-screenshots`, REQ-DEMO-013) arrive with the S3
+account and operator pages; until then the demo only shows the bundle parameters. See
+[DEMO-FRANKENPHP.md](DEMO-FRANKENPHP.md).
 
 ## Cursor Agent
 

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Nowo\ApiTokenBundle\Tests\Unit\Contract;
 
 use DateTimeImmutable;
+use LogicException;
+use Nowo\ApiTokenBundle\Application\Token\GeneratedToken;
 use Nowo\ApiTokenBundle\Contract\ApiTokenView;
 use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenIssueRefusedException;
 use Nowo\ApiTokenBundle\Contract\Exception\InvalidApiTokenArgumentException;
@@ -14,12 +16,16 @@ use Nowo\ApiTokenBundle\Contract\LookupId;
 use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\ReachChoice;
+use Nowo\ApiTokenBundle\Contract\SensitiveValue;
 use Nowo\ApiTokenBundle\Contract\TokenId;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\VarDumper\Cloner\VarCloner;
+use Symfony\Component\VarDumper\Dumper\CliDumper;
 
 use function print_r;
 use function str_repeat;
+use function strlen;
 use function var_export;
 
 final class ValueObjectsTest extends TestCase
@@ -124,8 +130,7 @@ final class ValueObjectsTest extends TestCase
     public function testGrantsRefuseBadShapes(array $levels, array $flags): void
     {
         $this->expectException(InvalidApiTokenArgumentException::class);
-        /* @phpstan-ignore argument.type, argument.type */
-        new Grants($levels, $flags);
+        new Grants($this->untyped($levels), $this->untyped($flags));
     }
 
     public function testGrantsFromStoredDropsDamage(): void
@@ -197,10 +202,41 @@ final class ValueObjectsTest extends TestCase
         $view   = new ApiTokenView(new TokenId('01933b1c-5d2e-7a3b-8c4d-123456789abc'), new LookupId('abcdefgh2345'), new OwnerRef('user', '1'), 'n', new Grants([]), Reach::everything(), new DateTimeImmutable(), new DateTimeImmutable(), null, 'cli');
         $issued = new IssuedToken($view, $marker);
 
-        self::assertSame($marker, $issued->secret);
-        self::assertStringNotContainsString($marker, print_r($issued, true));
-        self::assertSame('[redacted]', $issued->__debugInfo()['secret']);
-        self::assertStringNotContainsString($marker, var_export($issued->__debugInfo(), true));
+        self::assertSame($marker, $issued->secret());
+        $generated = new GeneratedToken(new LookupId('abcdefgh2345'), $marker);
+        self::assertSame($marker, $generated->token());
+
+        // Audit LW-L1: the six channels a secret leaks through.
+        foreach ([$issued, $generated, new SensitiveValue($marker)] as $value) {
+            self::assertStringNotContainsString($marker, (string) json_encode($value), 'json_encode');
+            self::assertStringContainsString('[redacted]', (string) json_encode($value));
+            self::assertStringNotContainsString($marker, var_export($value, true), 'var_export');
+            self::assertStringNotContainsString($marker, print_r((array) $value, true), '(array) cast');
+            self::assertStringNotContainsString($marker, print_r($value, true), 'print_r');
+            $dumper = new CliDumper();
+            self::assertStringNotContainsString($marker, (string) $dumper->dump((new VarCloner())->cloneVar($value), true), 'VarDumper');
+            try {
+                serialize($value);
+                self::fail('serialize must refuse');
+            } catch (LogicException) {
+            }
+        }
+        self::assertSame($marker, (new SensitiveValue($marker))->reveal());
+        foreach ([IssuedToken::class, GeneratedToken::class, SensitiveValue::class] as $class) {
+            try {
+                unserialize('O:' . strlen($class) . ':"' . $class . '":0:{}');
+                self::fail('unserialize must refuse');
+            } catch (LogicException) {
+            }
+        }
+    }
+
+    /**
+     * Hands a deliberately ill-typed value to a typed constructor without silencing the analyser.
+     */
+    private function untyped(mixed $value): mixed
+    {
+        return $value;
     }
 
     public function testRefusalCarriesItsReason(): void

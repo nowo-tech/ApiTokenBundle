@@ -9,7 +9,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\ApiTokenBundle\Contract\OwnerRef;
+use Nowo\ApiTokenBundle\Tests\Fixtures\BinaryIdListener;
 use Nowo\ApiTokenBundle\Tests\Fixtures\Ddd\Member;
+use Nowo\ApiTokenBundle\Tests\Fixtures\Ddd\MemberChecker;
 use Nowo\ApiTokenBundle\Tests\Fixtures\Ddd\MemberOwnerResolver;
 use Nowo\ApiTokenBundle\Tests\Fixtures\Ddd\MemberStatus;
 use Nowo\ApiTokenBundle\Tests\Fixtures\QueryLog;
@@ -88,27 +90,37 @@ final readonly class Host
             ? ['owner' => ['class' => User::class]]
             : [
                 'doctrine' => ['entity_manager' => 'ddd', 'auto_mapping' => false, 'table_prefix' => 'ddd_'],
-                'owner'    => ['type' => 'member', 'resolver' => MemberOwnerResolver::class, 'status' => MemberStatus::class],
+                'owner'    => ['type' => 'member', 'resolver' => MemberOwnerResolver::class, 'user_checker' => MemberChecker::class],
             ];
 
         return array_replace_recursive($common, $kind, $override);
     }
 
     /**
+     * Standard host security: the host's checker is set on its firewall only (`firewalls.api.user_checker`), as Symfony
+     * documents it; SecurityBundle's global `security.user_checker` stays the stock one (audit LW-M1).
+     *
+     * @param array<string, mixed>|null $firewall the standard host's `api` firewall (null = with the host's checker)
+     *
      * @return Closure(ContainerConfigurator, string): void
      */
-    public function configure(): Closure
+    public function configure(?array $firewall = null): Closure
     {
         $kind = $this->kind;
+        $firewall ??= ['pattern' => '^/api', 'stateless' => true, 'provider' => 'users', 'user_checker' => ActiveUserChecker::class];
 
-        return static function (ContainerConfigurator $container, string $url) use ($kind): void {
+        return static function (ContainerConfigurator $container, string $url) use ($kind, $firewall): void {
             $root = dirname(__DIR__, 3);
             if ($kind === self::STANDARD) {
                 $container->extension('doctrine', [
                     'dbal' => ['url' => $url],
                     'orm'  => ['mappings' => ['Fixtures' => ['type' => 'attribute', 'dir' => $root . '/tests/Fixtures/Standard', 'prefix' => 'Nowo\ApiTokenBundle\Tests\Fixtures\Standard', 'is_bundle' => false]]],
                 ]);
-                $container->services()->set('security.user_checker', ActiveUserChecker::class);
+                $container->extension('security', [
+                    'providers' => ['users' => ['entity' => ['class' => User::class, 'property' => 'id']]],
+                    'firewalls' => ['api' => $firewall],
+                ]);
+                $container->services()->set(ActiveUserChecker::class);
             } else {
                 $container->extension('doctrine', [
                     'dbal' => ['default_connection' => 'default', 'connections' => ['default' => ['url' => $url], 'ddd' => ['url' => $url]]],
@@ -123,8 +135,9 @@ final readonly class Host
                         ],
                     ],
                 ]);
+                $container->extension('security', ['firewalls' => ['main' => ['security' => false]]]);
                 $container->services()->set(MemberOwnerResolver::class)->autowire();
-                $container->services()->set(MemberStatus::class);
+                $container->services()->set(MemberChecker::class);
             }
             $container->services()->set('clock', MockClock::class)->args([self::NOW, 'UTC'])->public();
             $container->services()->set(RecordingListener::class)->public()
@@ -133,6 +146,8 @@ final readonly class Host
                 ->tag('kernel.event_listener', ['event' => 'Nowo\ApiTokenBundle\Contract\Event\ApiTokenRevokedEvent', 'method' => 'onEvent'])
                 ->tag('kernel.event_listener', ['event' => 'Nowo\ApiTokenBundle\Contract\Event\ApiTokenUsedEvent', 'method' => 'onEvent']);
             $container->services()->set(QueryLog::class)->public()->tag('doctrine.middleware');
+            $container->services()->set(MemberStatus::class);
+            $container->services()->set(BinaryIdListener::class)->tag('doctrine.event_listener', ['event' => 'loadClassMetadata']);
         };
     }
 

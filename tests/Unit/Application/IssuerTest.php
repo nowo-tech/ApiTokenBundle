@@ -36,7 +36,7 @@ final class IssuerTest extends ServiceTestCase
         self::assertNull($issued->token->lastUsedAt);
         self::assertSame('account', $issued->token->createdVia);
         $stored = $this->store->tokens[$issued->token->id->value];
-        self::assertSame(hash('sha256', $issued->secret), $stored->secretHash());
+        self::assertSame(hash('sha256', $issued->secret()), $stored->secretHash());
         self::assertSame(1, $stored->hashVersion());
 
         self::assertCount(1, $this->events);
@@ -45,7 +45,7 @@ final class IssuerTest extends ServiceTestCase
         self::assertSame($issued->token->id->value, $event->tokenId->value);
         self::assertSame('everything', $event->reachSummary);
         self::assertSame('account', $event->createdVia);
-        self::assertStringNotContainsString($issued->secret, serialize($event));
+        self::assertStringNotContainsString($issued->secret(), serialize($event));
         self::assertStringNotContainsString($stored->secretHash(), serialize($event));
     }
 
@@ -142,6 +142,23 @@ final class IssuerTest extends ServiceTestCase
         self::assertSame([], $this->events);
     }
 
+    public function testTheOwnerMustExistAndBeActive(): void
+    {
+        $this->missing                    = ['user:ghost'];
+        $inactive                         = $this->addUser('off');
+        $this->inactive[$inactive->key()] = true;
+
+        foreach ([new OwnerRef('user', 'ghost'), $inactive] as $owner) {
+            try {
+                $this->issue($owner);
+                self::fail('refusal expected');
+            } catch (ApiTokenIssueRefusedException $refusal) {
+                self::assertSame(ApiTokenIssueRefusedException::OWNER, $refusal->reason);
+            }
+        }
+        self::assertSame([], $this->store->tokens);
+    }
+
     /**
      * @return iterable<string, array{string, string}>
      */
@@ -166,7 +183,7 @@ final class IssuerTest extends ServiceTestCase
         $issued = $this->issue(new OwnerRef('user', '42'));
         $row    = $this->store->tokens[$issued->token->id->value];
 
-        self::assertStringNotContainsString($issued->secret, serialize($row));
-        self::assertStringNotContainsString($issued->secret, (string) json_encode($issued->token));
+        self::assertStringNotContainsString($issued->secret(), serialize($row));
+        self::assertStringNotContainsString($issued->secret(), (string) json_encode($issued->token));
     }
 }

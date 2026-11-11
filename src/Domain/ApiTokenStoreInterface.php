@@ -75,11 +75,17 @@ interface ApiTokenStoreInterface
     public function page(?TokenId $after, int $limit, ?OwnerRef $owner = null): array;
 
     /**
-     * Tokens that expired before `$cutoff`, oldest first.
+     * Keyset batch of the rows that expired before `$cutoff`, by raw `id` ascending after `$afterId`. A damaged row
+     * (it cannot be read as a token) comes with `token: null`, so the purge still removes it.
      *
-     * @return list<ApiToken>
+     * @return list<array{id: string, token: ApiToken|null}>
      */
-    public function expiredBefore(DateTimeImmutable $cutoff, int $limit): array;
+    public function expiredBatch(DateTimeImmutable $cutoff, int $limit, ?string $afterId = null): array;
+
+    /**
+     * Deletes a row by its raw stored id (the purge of damaged rows); false when there was no such row.
+     */
+    public function deleteRow(string $id): bool;
 
     /**
      * Writes *last used* = `$now` when it is null or older than `$olderThan`, outside any open transaction (returns

@@ -16,6 +16,7 @@
         <unique-constraints>
             <unique-constraint name="uniq_api_token_lookup" columns="lookup_id"/>
             <unique-constraint name="uniq_api_token_legacy" columns="legacy_hash"/>
+            <unique-constraint name="uniq_api_token_owner_name" columns="owner_type,owner_id,name_key"/>
         </unique-constraints>
 
         <id name="id" type="string" column="id" length="36"/>
@@ -26,6 +27,7 @@
         <field name="ownerType" type="string" column="owner_type" length="32"/>
         <field name="ownerId" type="string" column="owner_id" length="128"/>
         <field name="name" type="string" column="name" length="80"/>
+        <field name="nameKey" type="string" column="name_key" length="80"/>
         <field name="grants" type="json" column="grants"/>
         <field name="reachEverything" type="boolean" column="reach_everything"/>
         <field name="reach" type="json" column="reach"/>

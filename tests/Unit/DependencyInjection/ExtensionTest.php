@@ -53,6 +53,16 @@ final class ExtensionTest extends TestCase
         self::assertSame('app_', $container->getParameter('nowo_api_token.table_prefix'));
     }
 
+    public function testThePepperNeverSitsInAParameter(): void
+    {
+        $container = new ContainerBuilder();
+        (new NowoApiTokenExtension())->load([['hash' => ['version' => 2, 'pepper' => 'placeholder-not-a-secret']]], $container);
+
+        $config = $container->getParameter('nowo_api_token.config');
+        self::assertIsArray($config);
+        self::assertSame(['version' => 2, 'pepper' => '[redacted]'], $config['hash'] ?? null);
+    }
+
     public function testHostServicesReplaceTheDefaults(): void
     {
         $container = new ContainerBuilder();

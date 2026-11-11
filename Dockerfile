@@ -7,7 +7,8 @@ RUN apk add --no-cache \
     bash \
     libzip-dev
 
-RUN docker-php-ext-install -j2 zip
+# pdo_mysql: Database suite on the MySQL service (make test-with-db, REQ-TEST-005)
+RUN docker-php-ext-install -j2 zip pdo_mysql
 
 # PCOV for code coverage
 RUN apk add --no-cache $PHPIZE_DEPS \

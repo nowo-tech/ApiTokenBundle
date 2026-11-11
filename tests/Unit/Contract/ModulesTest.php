@@ -57,8 +57,7 @@ final class ModulesTest extends TestCase
         yield 'repeated flag' => [static fn (): ModuleDefinition => new ModuleDefinition('tasks', ['read'], ['a', 'a'])];
         yield 'unknown write level' => [static fn (): ModuleDefinition => new ModuleDefinition('tasks', ['read'], [], '', 'write')];
         yield 'requires itself' => [static fn (): ModuleDefinition => new ModuleDefinition('tasks', ['read'], [], '', null, ['tasks'])];
-        /* @phpstan-ignore argument.type */
-        yield 'non-string level' => [static fn (): ModuleDefinition => new ModuleDefinition('tasks', [1])];
+        yield 'non-string level' => [static fn (): ModuleDefinition => new ModuleDefinition('tasks', self::untyped([1]))];
     }
 
     /**
@@ -150,5 +149,13 @@ final class ModulesTest extends TestCase
     {
         $this->expectException(InvalidApiTokenArgumentException::class);
         $this->registry()->assertValid($grants, $allowed);
+    }
+
+    /**
+     * Hands a deliberately ill-typed value to a typed constructor without silencing the analyser.
+     */
+    private static function untyped(mixed $value): mixed
+    {
+        return $value;
     }
 }

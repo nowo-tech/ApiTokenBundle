@@ -22,6 +22,7 @@ use Nowo\ApiTokenBundle\Domain\ApiToken;
 #[ORM\Index(name: 'idx_api_token_expires', columns: ['expires_at'])]
 #[ORM\UniqueConstraint(name: 'uniq_api_token_lookup', columns: ['lookup_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_api_token_legacy', columns: ['legacy_hash'])]
+#[ORM\UniqueConstraint(name: 'uniq_api_token_owner_name', columns: ['owner_type', 'owner_id', 'name_key'])]
 class ApiTokenRecord
 {
     /**
@@ -46,6 +47,8 @@ class ApiTokenRecord
         public readonly string $ownerId,
         #[ORM\Column(name: 'name', type: Types::STRING, length: 80)]
         public readonly string $name,
+        #[ORM\Column(name: 'name_key', type: Types::STRING, length: 80)]
+        public readonly string $nameKey,
         #[ORM\Column(name: 'grants', type: Types::JSON)]
         public readonly array $grants,
         #[ORM\Column(name: 'reach_everything', type: Types::BOOLEAN)]

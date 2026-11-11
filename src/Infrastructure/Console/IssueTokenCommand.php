@@ -83,7 +83,7 @@ final class IssueTokenCommand extends Command
         }
 
         $errors->writeln(sprintf('Token "%s" (id %s, lookup %s) expires %s. It is shown only now:', $issued->token->name, $issued->token->id->value, $issued->token->lookupId->value, $issued->token->expiresAt->format('Y-m-d H:i:s \U\T\C')));
-        $output->writeln($issued->secret, OutputInterface::OUTPUT_RAW);
+        $output->writeln($issued->secret(), OutputInterface::OUTPUT_RAW);
 
         return Command::SUCCESS;
     }

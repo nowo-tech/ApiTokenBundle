@@ -18,7 +18,7 @@ use function str_replace;
 /**
  * Applies `doctrine.table_prefix` to the token table and its index names (`uniq_<prefix>api_token_lookup`, REQ-ORM-002)
  * and, on MySQL / MariaDB, a binary collation to the identifier columns (audit LQ): `ascii_bin` for the id-like ascii
- * columns, `utf8mb4_bin` for `owner_id`. PostgreSQL and SQLite compare exactly by default and need nothing.
+ * columns, `utf8mb4_bin` for `owner_id` and `name_key`. PostgreSQL and SQLite compare exactly by default and need nothing.
  *
  * Touches only the bundle's two mapped classes, on whichever entity manager maps them (standard and DDD hosts).
  */
@@ -68,7 +68,7 @@ final readonly class ApiTokenMetadataListener
         foreach ($metadata->fieldMappings as $field => $mapping) {
             if (in_array($mapping->columnName, self::ASCII_COLUMNS, true)) {
                 $metadata->fieldMappings[$field]->options = ['charset' => 'ascii', 'collation' => 'ascii_bin'] + ($mapping->options ?? []);
-            } elseif ($mapping->columnName === 'owner_id') {
+            } elseif ($mapping->columnName === 'owner_id' || $mapping->columnName === 'name_key') {
                 $metadata->fieldMappings[$field]->options = ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_bin'] + ($mapping->options ?? []);
             }
         }

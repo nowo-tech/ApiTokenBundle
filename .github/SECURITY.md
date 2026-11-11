@@ -4,10 +4,11 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| unreleased (`main`, scaffold) | :x: (no release yet) |
+| 0.1.x   | :white_check_mark: (first tag, after the REQ-SEC-004 audit of S1) |
+| unreleased (`main`, newer slices) | :x: |
 
-The first supported release is 1.0.0, after the REQ audit and the REQ-SEC-004 security audit (see
-[docs/ROADMAP.md](../docs/ROADMAP.md)).
+ApiTokenBundle is tagged 0.x per slice (0.1.0 … 0.5.0, owner decision Q-O6), each after its immediate REQ-SEC-004
+audit; only the latest 0.x minor receives fixes until 1.0.0. See [docs/ROADMAP.md](../docs/ROADMAP.md).
 
 ## Reporting a Vulnerability
 

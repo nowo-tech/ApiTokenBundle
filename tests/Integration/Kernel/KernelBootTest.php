@@ -36,6 +36,7 @@ final class KernelBootTest extends KernelTestCase
     public function testADisabledBundleAddsNoMappingToAnAutoMappedHost(): void
     {
         $container = $this->bootKernel([], 'sqlite:///:memory:', static function (ContainerConfigurator $c, string $url): void {
+            $c->extension('security', ['firewalls' => ['main' => ['security' => false]]]);
             $c->extension('doctrine', ['dbal' => ['url' => $url], 'orm' => ['auto_mapping' => true, 'mappings' => ['Fixtures' => ['type' => 'attribute', 'dir' => dirname(__DIR__, 2) . '/Fixtures/Standard', 'prefix' => 'Nowo\ApiTokenBundle\Tests\Fixtures\Standard', 'is_bundle' => false]]]]);
         })->getContainer();
         $doctrine = $container->get('doctrine');

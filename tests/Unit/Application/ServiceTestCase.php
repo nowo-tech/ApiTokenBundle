@@ -31,6 +31,8 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 use stdClass;
 use Symfony\Component\Clock\MockClock;
 
+use function in_array;
+
 /**
  * Wires the application services on an in-memory store, a mock clock and a recording dispatcher.
  */
@@ -49,6 +51,9 @@ abstract class ServiceTestCase extends TestCase
 
     /** @var array<string, object> owner key => user */
     protected array $users = [];
+
+    /** @var list<string> owner keys that never resolve, even for the issuer */
+    protected array $missing = [];
 
     /** @var array<string, bool> owner key => inactive */
     protected array $inactive = [];
@@ -107,6 +112,8 @@ abstract class ServiceTestCase extends TestCase
             $options['policy'] ?? new ConfigApiTokenPolicy($registry, 365),
             $options['reach'] ?? new NoReachChoices(),
             $options['settings'] ?? new ConfigSettingsProvider(),
+            $this->ownerResolver(true),
+            $this->ownerStatus(),
             $this->dispatcher(),
             $options['maxPerOwner'] ?? 20,
             $options['maxDays'] ?? 365,
@@ -118,42 +125,58 @@ abstract class ServiceTestCase extends TestCase
 
     protected function authenticator(?ApiTokenSettingsProviderInterface $settings = null): ApiTokenAuthenticator
     {
-        $test = $this;
-
         return new ApiTokenAuthenticator(
             $this->store,
             $this->codec,
             $this->hasher,
             $this->registry(),
             $settings ?? new ConfigSettingsProvider(),
-            new class($test) implements OwnerResolverInterface {
-                public function __construct(private readonly ServiceTestCase $test)
-                {
-                }
-
-                public function ownerOf(object $user): OwnerRef
-                {
-                    return new OwnerRef('user', 'x');
-                }
-
-                public function userOf(OwnerRef $owner): ?object
-                {
-                    return $this->test->userOf($owner);
-                }
-            },
-            new class($test) implements OwnerStatusInterface {
-                public function __construct(private readonly ServiceTestCase $test)
-                {
-                }
-
-                public function isActive(object $user): bool
-                {
-                    return $this->test->isActive($user);
-                }
-            },
+            $this->ownerResolver(),
+            $this->ownerStatus(),
             $this->dispatcher(),
             $this->clock,
         );
+    }
+
+    /**
+     * The test's owners. With `$register`, an owner the test never added becomes a known, active user on first use
+     * (issue tests); {@see self::$missing} owners stay unknown.
+     */
+    protected function ownerResolver(bool $register = false): OwnerResolverInterface
+    {
+        $test = $this;
+
+        return new class($test, $register) implements OwnerResolverInterface {
+            public function __construct(private readonly ServiceTestCase $test, private readonly bool $register)
+            {
+            }
+
+            public function ownerOf(object $user): OwnerRef
+            {
+                return new OwnerRef('user', 'x');
+            }
+
+            public function userOf(OwnerRef $owner): ?object
+            {
+                return $this->test->userOf($owner, $this->register);
+            }
+        };
+    }
+
+    protected function ownerStatus(): OwnerStatusInterface
+    {
+        $test = $this;
+
+        return new class($test) implements OwnerStatusInterface {
+            public function __construct(private readonly ServiceTestCase $test)
+            {
+            }
+
+            public function isActive(object $user): bool
+            {
+                return $this->test->isActive($user);
+            }
+        };
     }
 
     protected function revoker(): ApiTokenRevoker
@@ -161,8 +184,12 @@ abstract class ServiceTestCase extends TestCase
         return new ApiTokenRevoker($this->store, [], $this->dispatcher());
     }
 
-    public function userOf(OwnerRef $owner): ?object
+    public function userOf(OwnerRef $owner, bool $register = false): ?object
     {
+        if ($register && !isset($this->users[$owner->key()]) && !in_array($owner->key(), $this->missing, true)) {
+            $this->users[$owner->key()] = new stdClass();
+        }
+
         return $this->users[$owner->key()] ?? null;
     }
 

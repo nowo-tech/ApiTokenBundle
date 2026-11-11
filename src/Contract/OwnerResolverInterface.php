@@ -21,7 +21,9 @@ interface OwnerResolverInterface
 
     /**
      * The user of a reference, or null when it does not exist (erased) or the type is not handled. Implementations
-     * must compare the id exactly (`===`).
+     * must compare the id exactly (`===`) and read the account's current state on every call: never answer from a
+     * cache, a memo or an ORM identity map (worker mode with the kernel kept alive: a deactivation by another process
+     * must take effect on the next request).
      */
     public function userOf(OwnerRef $owner): ?object;
 }
