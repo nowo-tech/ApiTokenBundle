@@ -1,0 +1,3 @@
+# S0 scaffold: the bundle is installed and disabled. Later slices turn the demo features on here.
+nowo_api_token:
+    enabled: false

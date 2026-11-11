@@ -1,0 +1,4 @@
+# API Token Bundle: see https://github.com/nowo-tech/ApiTokenBundle/blob/main/docs/CONFIGURATION.md
+# Nothing is registered while `enabled` is false.
+nowo_api_token:
+    enabled: false
