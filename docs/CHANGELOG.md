@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Demo `.gitignore` ignores `/.pnpm-store` (REQ-GITIGNORE-003)
+- README: `## Requirements` moved right after `## Installation` (REQ-DOCS-019)
+
 ## [0.1.0] - 2026-11-11
 
 ### Added

@@ -53,6 +53,12 @@ composer require nowo-tech/api-token-bundle
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md). Nothing is registered while `nowo_api_token.enabled` is false.
 
+## Requirements
+
+- PHP >= 8.2, < 8.6 (Symfony 8.x needs PHP 8.4+)
+- Symfony 7.4, 8.0 or 8.1
+- Doctrine DBAL 4 (`doctrine/dbal` ^4.0) and ORM 3.3+ (`doctrine/orm` ^3.3); DoctrineBundle once the bundle is enabled
+
 ## Configuration
 
 ```yaml
@@ -62,12 +68,6 @@ nowo_api_token:
 ```
 
 Every key of the contract is already accepted (strict tree): [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
-
-## Requirements
-
-- PHP >= 8.2, < 8.6 (Symfony 8.x needs PHP 8.4+)
-- Symfony 7.4, 8.0 or 8.1
-- Doctrine DBAL 4 (`doctrine/dbal` ^4.0) and ORM 3.3+ (`doctrine/orm` ^3.3); DoctrineBundle once the bundle is enabled
 
 ## Demo
 
