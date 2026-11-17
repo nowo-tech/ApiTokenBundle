@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Demo shell rebuilt on UiKit's admin layout and default theme, no Bootstrap/CDN CSS; the demo requires `nowo-tech/ui-kit-bundle` (REQ-DEMO-014)
+- Demo: Playwright smoke e2e (`make -C demo/symfony8 test-e2e`); screenshots wait for the S3 UI (REQ-DEMO-013)
+
 - Demo `.gitignore` ignores `/.pnpm-store` (REQ-GITIGNORE-003)
 - README: `## Requirements` moved right after `## Installation` (REQ-DOCS-019)
 

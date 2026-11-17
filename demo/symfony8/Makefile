@@ -6,7 +6,7 @@ COMPOSE_BIN := $(shell docker compose version >/dev/null 2>&1 && echo "docker co
 COMPOSE     := $(COMPOSE_BIN) -f $(COMPOSE_FILE)
 SERVICE_PHP := php
 
-.PHONY: help up down restart build install shell logs setup db-schema cache-clear update-bundle update-deps ensure-up test test-coverage verify
+.PHONY: help up down restart build install shell logs setup db-schema cache-clear update-bundle update-deps ensure-up test test-coverage verify test-e2e
 
 help:
 	@echo "API Token Bundle Demo - Symfony 8"
@@ -23,6 +23,7 @@ help:
 	@echo "  make update-bundle Update bundle from path repo"
 	@echo "  make update-deps  composer update in a one-off container (REQ-MAKE-008)"
 	@echo "  make restart      Restart containers"
+	@echo "  make test-e2e     Playwright smoke e2e (REQ-DEMO-013)"
 	@echo "  make test         Lint the container and the Twig templates"
 	@echo "  make test-coverage Same as test (the demo has no PHPUnit suite)"
 	@echo "  make verify       HTTP 200 on / (demo must be up)"
@@ -111,3 +112,15 @@ verify:
 
 # REQ-MAKE-008: update-deps (soft include; the shared script exists in the bundles workspace, not on a CI checkout).
 -include $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../../.scripts/Makefile.demo-update-deps.mk)
+
+# REQ-DEMO-013: Playwright e2e via the official image (host Chromium deps are often missing on WSL).
+PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.63.0-jammy
+
+test-e2e: ensure-up
+	@mkdir -p e2e/node_modules
+	@PORT=$$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2); PORT=$${PORT:-8221}; \
+	docker run --rm --network host \
+		-v "$(CURDIR)/e2e:/e2e" -w /e2e \
+		-e DEMO_BASE_URL=http://127.0.0.1:$$PORT \
+		$(PLAYWRIGHT_IMAGE) \
+		bash -lc 'npm install --no-fund --no-audit && npx playwright test --project=chromium'
