@@ -44,5 +44,6 @@ if [ ! -f /app/vendor/autoload_runtime.php ]; then
 fi
 
 php /app/bin/console doctrine:database:create --if-not-exists --no-interaction 2>/dev/null || true
+php /app/bin/console assets:install /app/public --symlink --no-interaction 2>/dev/null || true
 
 exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile

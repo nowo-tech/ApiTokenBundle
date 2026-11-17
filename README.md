@@ -71,7 +71,7 @@ Every key of the contract is already accepted (strict tree): [docs/CONFIGURATION
 
 ## Demo
 
-`demo/symfony8`: Symfony 8.1, FrankenPHP worker mode, MySQL, Web Profiler, Twig Inspector and Hot Reload, on
+`demo/symfony8`: Symfony 8.1, FrankenPHP worker mode, MySQL, UiKit shell, Web Profiler, Twig Inspector and Hot Reload, on
 http://localhost:8221 (`make -C demo up`). See [docs/DEMO-FRANKENPHP.md](docs/DEMO-FRANKENPHP.md).
 
 ## Documentation
