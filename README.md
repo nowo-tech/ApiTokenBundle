@@ -22,6 +22,10 @@ EntityManager.
 
 This bundle is **FrankenPHP worker mode friendly**.
 
+![API Token Bundle demo: bundle status, configuration parameters and the Symfony WebProfiler](docs/images/demo/overview.webp)
+
+*The demo shows the bundle registered, its container parameters and the MySQL connection.*
+
 ## Features
 
 S1 (today) covers the token store, format, issuer, revoker, query and authenticator; the rest follows the roadmap.
@@ -72,7 +76,8 @@ Every key of the contract is already accepted (strict tree): [docs/CONFIGURATION
 ## Demo
 
 `demo/symfony8`: Symfony 8.1, FrankenPHP worker mode, MySQL, UiKit shell, Web Profiler, Twig Inspector and Hot Reload, on
-http://localhost:8221 (`make -C demo up`). See [docs/DEMO-FRANKENPHP.md](docs/DEMO-FRANKENPHP.md).
+http://localhost:8221 (`make -C demo up`). Playwright e2e: `make -C demo/symfony8 test-e2e`; refresh the screenshot above with
+`make -C demo/symfony8 demo-screenshots`. See [docs/DEMO-FRANKENPHP.md](docs/DEMO-FRANKENPHP.md).
 
 ## Documentation
 

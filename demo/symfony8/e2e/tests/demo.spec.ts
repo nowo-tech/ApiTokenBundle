@@ -1,9 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-/**
- * REQ-DEMO-013: the demo is a thin S0 status page (no distinctive product UI yet), so this is a smoke e2e only and no
- * screenshots are committed (REQ-DEMO-013 section 5).
- */
+/** REQ-DEMO-013: the demo boots and the bundle status page renders (screenshots live in screenshots.spec.ts). */
 test.describe('demo smoke', () => {
   test('home renders the UiKit shell and the bundle status table', async ({ page }) => {
     const errors: string[] = [];

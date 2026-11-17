@@ -37,6 +37,12 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
       testMatch: /.*\.spec\.ts/,
+      testIgnore: /screenshots\.spec\.ts/,
+    },
+    {
+      name: 'screenshots',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /screenshots\.spec\.ts/,
     },
   ],
 });

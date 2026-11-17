@@ -43,8 +43,8 @@ make demo-smoke            # boot, HTTP 200, down
 make -C demo down-symfony8
 ```
 
-Playwright smoke e2e is `make test-e2e` (in `demo/symfony8`, REQ-DEMO-013); WebP screenshots (`make demo-screenshots`)
-arrive with the S3 account and operator pages; until then the demo only shows the bundle parameters. See
+Playwright e2e is `make test-e2e` and the WebP screenshot in `docs/images/demo/` is refreshed with
+`make demo-screenshots` (both in `demo/symfony8`, REQ-DEMO-013). Re-run the screenshots when the demo UI changes. See
 [DEMO-FRANKENPHP.md](DEMO-FRANKENPHP.md).
 
 ## Cursor Agent

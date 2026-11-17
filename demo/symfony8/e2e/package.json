@@ -2,12 +2,15 @@
   "name": "nowo-demo-e2e",
   "private": true,
   "version": "1.0.0",
-  "description": "Playwright e2e smoke for the demo (REQ-DEMO-013)",
+  "description": "Playwright e2e + screenshots for the demo (REQ-DEMO-013)",
   "scripts": {
     "test": "playwright test",
-    "install-browsers": "playwright install chromium"
+    "test:screenshots": "playwright test --project=screenshots",
+    "install-browsers": "playwright install chromium",
+    "to-webp": "node scripts/to-webp.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.63.0",
+    "sharp": "^0.34.4"
   }
 }
