@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Committed WebP demo screenshot (`docs/images/demo/overview.webp`) captured by Playwright, `make demo-screenshots` and a README image (REQ-DEMO-013)
+
 ### Changed
 
 - Demo shell rebuilt on UiKit's admin layout and default theme, no Bootstrap/CDN CSS; the demo requires `nowo-tech/ui-kit-bundle` (REQ-DEMO-014)
