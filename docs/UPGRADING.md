@@ -3,9 +3,18 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 0.2.0](#to-020)
 - [To 0.1.0](#to-010)
 
 ## Unreleased
+
+## To 0.2.0
+
+From **0.1.0**:
+
+```bash
+composer update nowo-tech/api-token-bundle
+```
 
 - **New table** `<prefix>api_token_owner_lock` (default `nowo_api_token_owner_lock`): run `doctrine:migrations:diff`
   and compare with the reference DDL in [INSTALLATION.md](INSTALLATION.md#reference-ddl-doctrinetable_prefix-nowo_).

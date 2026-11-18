@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-18
+
 ### Added
 
 - Concurrency (REQ-RUNTIME-003, [CONCURRENCY.md](CONCURRENCY.md)): a lock conflict (deadlock, lock wait timeout,
@@ -38,6 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The live-token cap (`max_per_owner`) could be exceeded by concurrent issues for one owner (count-then-insert): the
   issuer now takes the owner's lock row before it counts and checks the name. Contention only, no GHSA.
 - A lock conflict while issuing or revoking surfaced as a 500; it is now a 409 with a conflict code.
+
+[0.2.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.2.0
 
 ## [0.1.0] - 2026-11-11
 
@@ -84,5 +88,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `Grants` keeps modules in key order, so a stored grant reads back identically on MySQL (which reorders JSON keys), PostgreSQL and SQLite.
   - Runtime dependencies: `doctrine/dbal` ^4, `doctrine/orm` ^3.3, `symfony/{clock,console,event-dispatcher,security-core,uid}`, `psr/{clock,event-dispatcher,log}`. DoctrineBundle is required at runtime once enabled.
 
-[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.2.0...HEAD
 [0.1.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.1.0
