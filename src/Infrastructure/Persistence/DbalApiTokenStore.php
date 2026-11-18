@@ -11,12 +11,14 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Exception;
 use JsonException;
 use LogicException;
+use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenConflictException;
 use Nowo\ApiTokenBundle\Contract\Exception\InvalidApiTokenArgumentException;
 use Nowo\ApiTokenBundle\Contract\LookupId;
 use Nowo\ApiTokenBundle\Contract\OwnerRef;
@@ -25,8 +27,13 @@ use Nowo\ApiTokenBundle\Domain\ApiToken;
 use Nowo\ApiTokenBundle\Domain\ApiTokenStoreInterface;
 use Nowo\ApiTokenBundle\Domain\LookupIdTakenException;
 use Nowo\ApiTokenBundle\Infrastructure\Doctrine\ApiTokenMetadataListener;
+use Nowo\TransactionContract\TransientStorageFailure;
+use Nowo\TransactionDoctrine\DoctrineTransactionRunner;
+use Nowo\TransactionDoctrine\TransientFailureClassifier;
+use Nowo\TransactionDoctrine\TransientFailureKind;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Throwable;
 
 use function array_key_exists;
 use function implode;
@@ -45,8 +52,13 @@ use const JSON_THROW_ON_ERROR;
  * Default {@see ApiTokenStoreInterface}: plain DBAL on the connection of `doctrine.entity_manager` (contract §5.4).
  *
  * - Never flushes an EntityManager and never hydrates a managed entity: rows become {@see ApiToken} objects by hand.
- * - Writes run in a transaction opened and closed in the same call; inside a host transaction they join it and the
- *   after-commit work waits for the host's commit ({@see AfterCommitQueue}).
+ * - Writes run in a transaction opened and closed in the same call, through transaction-doctrine's
+ *   {@see DoctrineTransactionRunner} on the connection (savepoint-aware repair after a nested failure, REQ-RUNTIME-003
+ *   rule 3); inside a host transaction they join it and the after-commit work waits for the host's commit
+ *   ({@see AfterCommitQueue}).
+ * - Lock conflicts are replayed up to `$attempts` times when the store opened the transaction (never inside a host
+ *   transaction), then thrown as {@see ApiTokenConflictException}; on PostgreSQL a transaction the store opens gets
+ *   `SET LOCAL lock_timeout` (rule 9).
  * - Reads, and writes outside a host transaction, retry once when the connection was lost between requests.
  * - Times are stored and read as UTC. Every owner-scoped result is re-checked in PHP (`===`, audit LQ).
  * - No query compares the secret hash.
@@ -59,9 +71,16 @@ final readonly class DbalApiTokenStore implements ApiTokenStoreInterface
 
     private string $table;
 
+    private string $lockTable;
+
+    private TransientFailureClassifier $classifier;
+
     /**
      * @param string $entityManager `doctrine.entity_manager` (falls back to a DBAL connection of that name)
      * @param string $tablePrefix `doctrine.table_prefix`
+     * @param int $attempts `concurrency.attempts`: tries of a unit the store opened, on lock conflicts (1 = no replay)
+     * @param int $lockTimeoutMs `concurrency.lock_timeout_ms`: PostgreSQL `lock_timeout` of a transaction the store opens (0 = server default)
+     * @param int $retryAfterSeconds `conflict_response.retry_after`: the hint carried by the conflict
      */
     public function __construct(
         private ManagerRegistry $registry,
@@ -69,8 +88,13 @@ final readonly class DbalApiTokenStore implements ApiTokenStoreInterface
         private string $entityManager = 'default',
         string $tablePrefix = 'nowo_',
         private ?LoggerInterface $logger = null,
+        private int $attempts = 3,
+        private int $lockTimeoutMs = 5000,
+        private int $retryAfterSeconds = 1,
     ) {
-        $this->table = $tablePrefix . ApiTokenMetadataListener::TABLE;
+        $this->table      = $tablePrefix . ApiTokenMetadataListener::TABLE;
+        $this->lockTable  = $tablePrefix . ApiTokenMetadataListener::LOCK_TABLE;
+        $this->classifier = new TransientFailureClassifier();
     }
 
     /**
@@ -80,7 +104,7 @@ final readonly class DbalApiTokenStore implements ApiTokenStoreInterface
     {
         $connection = $this->connection();
         $joined     = $connection->isTransactionActive();
-        $result     = $joined ? $connection->transactional($work) : $this->retrying($connection, static fn (Connection $c): mixed => $c->transactional($work));
+        $result     = $joined ? $this->unit($connection, $work, 1) : $this->retrying($connection, fn (Connection $c): mixed => $this->unit($c, $work, $this->attempts));
         if (!$afterCommit instanceof Closure) {
             return $result;
         }
@@ -95,6 +119,34 @@ final readonly class DbalApiTokenStore implements ApiTokenStoreInterface
         }
 
         return $result;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function lockOwner(OwnerRef $owner): void
+    {
+        $connection = $this->connection();
+        if (!$connection->isTransactionActive()) {
+            throw new LogicException('nowo_api_token: lockOwner() must run inside transactional().');
+        }
+        $update = sprintf('UPDATE %s SET version = version + 1 WHERE owner_type = ? AND owner_id = ?', $this->lockTable);
+        $params = [$owner->type, $owner->id];
+        if ((int) $connection->executeStatement($update, $params) > 0) {
+            return;
+        }
+        try {
+            // A savepoint: on PostgreSQL a unique violation would otherwise abort the whole transaction.
+            $connection->transactional(fn (Connection $c): int|string => $c->insert($this->lockTable, ['owner_type' => $owner->type, 'owner_id' => $owner->id, 'version' => 1], ['version' => ParameterType::INTEGER]));
+
+            return;
+        } catch (UniqueConstraintViolationException) {
+            // Another caller created the row first (or a stored id differs only in trailing spaces on MySQL, which
+            // shares the row: the lock is merely broader). Its UPDATE waits for that caller's commit.
+        }
+        if ((int) $connection->executeStatement($update, $params) === 0) {
+            throw new LogicException('nowo_api_token: the owner lock row could not be taken.');
+        }
     }
 
     /**
@@ -254,6 +306,47 @@ final readonly class DbalApiTokenStore implements ApiTokenStoreInterface
             sprintf('UPDATE %s SET last_used_at = ? WHERE id = ? AND (last_used_at IS NULL OR last_used_at < ?)', $this->table),
             [$this->utc($now), $id->value, $this->utc($olderThan)],
         ) > 0;
+    }
+
+    /**
+     * One write unit through the runner: a lock conflict is replayed until `$attempts` tries are spent, then thrown as
+     * a `CONFLICT_001` {@see ApiTokenConflictException}; a lost savepoint with no deadlock behind it (outcome unknown)
+     * as `CONFLICT_002`. Anything else (a refusal, a unique violation, a lost connection) is rethrown unchanged.
+     *
+     * @template T
+     *
+     * @param Closure(): T $work
+     *
+     * @return T
+     */
+    private function unit(Connection $connection, Closure $work, int $attempts): mixed
+    {
+        $runner = DoctrineTransactionRunner::forConnection($connection, $this->retryAfterSeconds, $this->logger);
+        $opened = !$connection->isTransactionActive() && $this->lockTimeoutMs > 0 && $connection->getDatabasePlatform() instanceof PostgreSQLPlatform;
+        $body   = $opened ? function () use ($connection, $work): mixed {
+            $connection->executeStatement(sprintf("SET LOCAL lock_timeout = '%dms'", $this->lockTimeoutMs));
+
+            return $work();
+        } : $work;
+        for ($attempt = 1;; ++$attempt) {
+            try {
+                return $runner->run($body);
+            } catch (ApiTokenConflictException $conflict) {
+                throw $conflict;
+            } catch (TransientStorageFailure $failure) {
+                $cause = $failure->getPrevious() ?? $failure;
+                if ($attempt >= $attempts) {
+                    throw ApiTokenConflictException::retrySafe($cause, $this->classifier->classify($cause) ?? TransientFailureKind::Retryable, $attempt, $this->retryAfterSeconds);
+                }
+                ($this->logger ?? new NullLogger())->info('nowo_api_token: lock conflict on attempt {attempt}, replaying the unit.', ['attempt' => $attempt, 'class' => $cause::class]);
+            } catch (Throwable $failure) {
+                if ($this->classifier->isCommitOutcomeUnknown($failure)) {
+                    throw ApiTokenConflictException::committed($failure, TransientFailureKind::Retryable, $attempt);
+                }
+
+                throw $failure;
+            }
+        }
     }
 
     /**

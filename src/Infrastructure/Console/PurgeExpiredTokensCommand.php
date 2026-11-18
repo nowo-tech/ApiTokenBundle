@@ -6,6 +6,7 @@ namespace Nowo\ApiTokenBundle\Infrastructure\Console;
 
 use DateTimeZone;
 use Nowo\ApiTokenBundle\Application\Service\ApiTokenRevoker;
+use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenConflictException;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -58,6 +59,11 @@ final class PurgeExpiredTokensCommand extends Command
         $logger->info('nowo_api_token: purge of expired tokens started.', $context);
         try {
             $deleted = $this->revoker->purgeExpired($cutoff, $this->batchSize, static fn (): bool => hrtime(true) < $deadline);
+        } catch (ApiTokenConflictException $conflict) {
+            $logger->warning('nowo_api_token: purge of expired tokens stopped on a lock conflict ({code}); run it again.', $context + ['code' => $conflict->conflictCode->value, 'class' => $conflict::class]);
+            $output->writeln(sprintf('<error>%s: %s</error>', $conflict->conflictCode->value, $conflict->getMessage()));
+
+            return Command::FAILURE;
         } catch (Throwable $exception) {
             $logger->error('nowo_api_token: purge of expired tokens failed: {class}', $context + ['class' => $exception::class, 'exception' => $exception]);
 

@@ -13,6 +13,8 @@ use Nowo\ApiTokenBundle\Contract\OwnerStatusInterface;
 use Nowo\ApiTokenBundle\Contract\ReachProviderInterface;
 use Nowo\ApiTokenBundle\Contract\TokenRevocationListenerInterface;
 use Nowo\ApiTokenBundle\DependencyInjection\NowoApiTokenExtension;
+use Nowo\ApiTokenBundle\Infrastructure\Http\ApiTokenConflictListener;
+use Nowo\ApiTokenBundle\Infrastructure\Persistence\DbalApiTokenStore;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -20,6 +22,7 @@ use Symfony\Component\DependencyInjection\Extension\Extension;
 
 use function array_filter;
 use function array_keys;
+use function array_slice;
 use function array_values;
 use function count;
 use function str_starts_with;
@@ -71,7 +74,13 @@ final class ExtensionTest extends TestCase
             'owner'             => ['resolver' => 'app.owner_resolver', 'status' => 'app.owner_status'],
             'reach'             => ['provider' => 'app.reach'],
             'settings_provider' => 'app.settings',
+            'conflict_response' => ['status' => 503, 'retry_after' => 4],
+            'concurrency'       => ['attempts' => 2, 'lock_timeout_ms' => 0],
         ]], $container);
+
+        self::assertSame([503, 4], $container->getDefinition(NowoApiTokenExtension::CONFLICT_POLICY)->getArguments());
+        self::assertSame([2, 0, 4], array_slice($container->getDefinition(DbalApiTokenStore::class)->getArguments(), 5));
+        self::assertSame([['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 0]], $container->getDefinition(ApiTokenConflictListener::class)->getTag('kernel.event_listener'));
 
         self::assertSame('app.owner_resolver', (string) $container->getAlias(OwnerResolverInterface::class));
         self::assertSame('app.owner_status', (string) $container->getAlias(OwnerStatusInterface::class));

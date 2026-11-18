@@ -4,7 +4,8 @@
 prepends it on `doctrine.entity_manager` while `enabled` and `doctrine.auto_mapping` are true and `doctrine.mapping` is
 `xml` (the default). With `doctrine.mapping: attribute` the attribute-mapped twin
 `Nowo\ApiTokenBundle\Infrastructure\Doctrine\Entity\ApiTokenRecord` is registered instead (same table, same columns,
-tested). DDD hosts set `auto_mapping: false` and register this directory (type `xml`, prefix
+tested). `ApiTokenOwnerLock.orm.xml` maps the per-owner issue lock row (`<prefix>api_token_owner_lock`, REQ-RUNTIME-003;
+twin `ApiTokenOwnerLockRecord`). DDD hosts set `auto_mapping: false` and register this directory (type `xml`, prefix
 `Nowo\ApiTokenBundle\Domain`) on their own entity manager.
 
 The directory is deliberately not `Resources/config/doctrine`: DoctrineBundle's bundle auto-mapping scans that path

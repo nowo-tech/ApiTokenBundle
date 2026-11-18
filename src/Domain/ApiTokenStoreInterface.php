@@ -6,6 +6,8 @@ namespace Nowo\ApiTokenBundle\Domain;
 
 use Closure;
 use DateTimeImmutable;
+use LogicException;
+use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenConflictException;
 use Nowo\ApiTokenBundle\Contract\LookupId;
 use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\TokenId;
@@ -24,6 +26,12 @@ interface ApiTokenStoreInterface
      * it and `$afterCommit` waits for the outermost commit, or is dropped on rollback; otherwise `$afterCommit` runs
      * right after this commit. `$afterCommit` receives the work's result; its failures are logged, never thrown.
      *
+     * A lock conflict (deadlock, lock wait timeout, serialization failure) is replayed a few times when the store opened
+     * the transaction itself, never inside a host transaction; on the last attempt, or inside a host transaction, it
+     * becomes {@see ApiTokenConflictException} (`CONFLICT_001`). A lost savepoint with an unknown outcome becomes
+     * {@see ApiTokenConflictException} with `CONFLICT_002`. Unique violations and lost connections are not conflicts:
+     * they keep their own exception (REQ-RUNTIME-003 rule 6).
+     *
      * @template T
      *
      * @param Closure(): T $work
@@ -32,6 +40,15 @@ interface ApiTokenStoreInterface
      * @return T
      */
     public function transactional(Closure $work, ?Closure $afterCommit = null): mixed;
+
+    /**
+     * Takes the owner's issue lock until the current transaction ends (REQ-RUNTIME-003 rule 4): concurrent callers for
+     * the same owner wait for each other, so a count-then-insert under it (the live-token cap, the name check) cannot
+     * be overtaken. Must run inside {@see self::transactional()}.
+     *
+     * @throws LogicException when no transaction is open
+     */
+    public function lockOwner(OwnerRef $owner): void;
 
     /**
      * Inserts a new token.

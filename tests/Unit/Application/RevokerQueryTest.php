@@ -9,6 +9,7 @@ use Nowo\ApiTokenBundle\Application\Service\ApiTokenQuery;
 use Nowo\ApiTokenBundle\Application\Service\ApiTokenRevoker;
 use Nowo\ApiTokenBundle\Contract\ApiTokenView;
 use Nowo\ApiTokenBundle\Contract\Event\ApiTokenRevokedEvent;
+use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenConflictException;
 use Nowo\ApiTokenBundle\Contract\Exception\InvalidApiTokenArgumentException;
 use Nowo\ApiTokenBundle\Contract\Grants;
 use Nowo\ApiTokenBundle\Contract\IssueRequest;
@@ -17,6 +18,8 @@ use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\RevocationReason;
 use Nowo\ApiTokenBundle\Contract\TokenId;
 use Nowo\ApiTokenBundle\Contract\TokenRevocationListenerInterface;
+use Nowo\TransactionDoctrine\ConflictCode;
+use Nowo\TransactionDoctrine\TransientFailureKind;
 use Psr\Log\AbstractLogger;
 use RuntimeException;
 use Stringable;
@@ -110,6 +113,56 @@ final class RevokerQueryTest extends ServiceTestCase
         self::assertSame([$kept->token->id->value], array_keys($this->store->tokens));
     }
 
+    public function testAConflictAfterACommittedBatchIs002(): void
+    {
+        $owner = new OwnerRef('user', '1');
+        for ($i = 0; $i <= ApiTokenRevoker::BATCH; ++$i) {
+            $this->issuer(['maxPerOwner' => 1000])->issue(new IssueRequest($owner, 'n' . $i, new Grants(['tasks' => 'read']), Reach::everything(), 1));
+        }
+
+        $this->store->transactionFailures = [$this->conflict()];
+        try {
+            $this->revoker()->revokeAll($owner, RevocationReason::OwnerAll);
+            self::fail('no conflict');
+        } catch (ApiTokenConflictException $conflict) {
+            self::assertSame(ConflictCode::RetrySafe, $conflict->conflictCode, 'nothing committed yet');
+        }
+
+        $this->store->transactionFailures = [null, $this->conflict()];
+        try {
+            $this->revoker()->revokeAll($owner, RevocationReason::OwnerAll);
+            self::fail('no conflict');
+        } catch (ApiTokenConflictException $conflict) {
+            self::assertSame(ConflictCode::Committed, $conflict->conflictCode, 'the first batch was committed');
+        }
+        self::assertCount(1, $this->store->tokens);
+    }
+
+    public function testAPurgeConflictAfterACommittedBatchIs002(): void
+    {
+        for ($i = 0; $i < 2; ++$i) {
+            $this->issue(new OwnerRef('user', (string) $i), 'n', ['tasks' => 'read'], 1);
+        }
+        $cutoff = $this->clock->now()->modify('+3 days');
+
+        $this->store->transactionFailures = [$this->conflict()];
+        try {
+            $this->revoker()->purgeExpired($cutoff, 1);
+            self::fail('no conflict');
+        } catch (ApiTokenConflictException $conflict) {
+            self::assertSame(ConflictCode::RetrySafe, $conflict->conflictCode);
+        }
+
+        $this->store->transactionFailures = [null, $this->conflict()];
+        try {
+            $this->revoker()->purgeExpired($cutoff, 1);
+            self::fail('no conflict');
+        } catch (ApiTokenConflictException $conflict) {
+            self::assertSame(ConflictCode::Committed, $conflict->conflictCode);
+        }
+        self::assertCount(1, $this->store->tokens);
+    }
+
     public function testPurgeStopsWhenAskedOrDone(): void
     {
         for ($i = 0; $i < 5; ++$i) {
@@ -144,6 +197,11 @@ final class RevokerQueryTest extends ServiceTestCase
         self::assertSame([], $this->store->damaged);
         self::assertSame([], $this->store->tokens);
         self::assertCount(1, $this->events(), 'one event: the damaged rows have no token to describe');
+    }
+
+    private function conflict(): ApiTokenConflictException
+    {
+        return ApiTokenConflictException::retrySafe(new RuntimeException('lock wait'), TransientFailureKind::LockWaitTimeout, 1, 1);
     }
 
     public function testQuery(): void

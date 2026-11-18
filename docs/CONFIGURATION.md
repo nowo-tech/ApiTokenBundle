@@ -33,7 +33,9 @@ nowo_api_token:
     bridges: { task_board: auto, wiki: auto, mcp_kit: auto, time_track: false, http_log: auto, user_kit: auto, audit_kit: auto, auth_kit: auto }
     reach: { allow_everything: true, provider: null, max_entries: 200 }
     expiry: { default_days: 90, max_days: 365, choices: [7, 30, 90, 365], purge_after_days: 30, notify_before_days: null }
-    max_per_owner: 20
+    max_per_owner: 20                    # enforced under the owner lock row (CONCURRENCY.md)
+    concurrency: { attempts: 3, lock_timeout_ms: 5000 }   # replays of a lock conflict; PostgreSQL lock_timeout (0 = server default)
+    conflict_response: { status: 409, retry_after: 1 }    # 409 | 503; Retry-After of a CONFLICT_001 answer
     reauth: { enabled: true, fresh_seconds: 300, max_attempts: 5, gate: null }
     rate_limit:
         cache_pool: cache.rate_limiter
@@ -66,7 +68,7 @@ nowo_api_token:
 
 | Key | Used from |
 | --- | --- |
-| `enabled`, `doctrine`, `owner`, `modules`, `token_prefix`, `checksum`, `hash`, `expiry` (except `choices`, `notify_before_days`), `max_per_owner`, `reach`, `settings_provider`, `messenger` (the purge command) | S1 |
+| `enabled`, `doctrine`, `owner`, `modules`, `token_prefix`, `checksum`, `hash`, `expiry` (except `choices`, `notify_before_days`), `max_per_owner`, `reach`, `settings_provider`, `messenger` (the purge command), `concurrency`, `conflict_response` | S1 |
 | `firewall`, `rate_limit` | S2 |
 | `reauth`, `web_ui`, `admin_ui`, `expiry.choices` | S3 |
 | `bridges`, `http_log`, `revoke_on_sessions_revoked` | S4 |

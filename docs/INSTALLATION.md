@@ -65,6 +65,7 @@ MySQL 8 / MariaDB 11 (binary collations on the identifiers, audit LQ):
 
 ```sql
 CREATE TABLE nowo_api_token (lookup_id VARCHAR(12) CHARACTER SET ascii NOT NULL COLLATE `ascii_bin`, secret_hash VARCHAR(64) CHARACTER SET ascii NOT NULL COLLATE `ascii_bin`, hash_version SMALLINT NOT NULL, owner_type VARCHAR(32) CHARACTER SET ascii NOT NULL COLLATE `ascii_bin`, owner_id VARCHAR(128) CHARACTER SET utf8mb4 NOT NULL COLLATE `utf8mb4_bin`, name VARCHAR(80) NOT NULL, name_key VARCHAR(80) CHARACTER SET utf8mb4 NOT NULL COLLATE `utf8mb4_bin`, grants JSON NOT NULL, reach_everything TINYINT NOT NULL, reach JSON NOT NULL, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, last_used_at DATETIME DEFAULT NULL, created_via VARCHAR(16) NOT NULL, legacy_hash VARCHAR(64) CHARACTER SET ascii DEFAULT NULL COLLATE `ascii_bin`, id VARCHAR(36) CHARACTER SET ascii NOT NULL COLLATE `ascii_bin`, INDEX idx_nowo_api_token_owner (owner_type, owner_id, created_at), INDEX idx_nowo_api_token_expires (expires_at), UNIQUE INDEX uniq_nowo_api_token_lookup (lookup_id), UNIQUE INDEX uniq_nowo_api_token_legacy (legacy_hash), UNIQUE INDEX uniq_nowo_api_token_owner_name (owner_type, owner_id, name_key), PRIMARY KEY (id));
+CREATE TABLE nowo_api_token_owner_lock (owner_type VARCHAR(32) CHARACTER SET ascii NOT NULL COLLATE `ascii_bin`, owner_id VARCHAR(128) CHARACTER SET utf8mb4 NOT NULL COLLATE `utf8mb4_bin`, version INT NOT NULL, PRIMARY KEY (owner_type, owner_id));
 ```
 
 PostgreSQL 16+ (exact comparison by default; the unique index on `legacy_hash` allows many NULLs):
@@ -76,7 +77,11 @@ CREATE INDEX idx_nowo_api_token_expires ON nowo_api_token (expires_at);
 CREATE UNIQUE INDEX uniq_nowo_api_token_lookup ON nowo_api_token (lookup_id);
 CREATE UNIQUE INDEX uniq_nowo_api_token_legacy ON nowo_api_token (legacy_hash);
 CREATE UNIQUE INDEX uniq_nowo_api_token_owner_name ON nowo_api_token (owner_type, owner_id, name_key);
+CREATE TABLE nowo_api_token_owner_lock (owner_type VARCHAR(32) NOT NULL, owner_id VARCHAR(128) NOT NULL, version INT NOT NULL, PRIMARY KEY (owner_type, owner_id));
 ```
+
+`nowo_api_token_owner_lock` (0.2) holds one row per owner that ever issued a token: the issuer locks it so the
+live-token cap holds under concurrent issues ([CONCURRENCY.md](CONCURRENCY.md)). It carries no business data.
 
 SQLite: the PostgreSQL statements with `CLOB` for the two JSON columns and `DATETIME` for the dates.
 
