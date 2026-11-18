@@ -100,6 +100,7 @@ http://localhost:8221 (`make -C demo up`). Playwright e2e: `make -C demo/symfony
 - [Contract 221-A](docs/CONTRACT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [FrankenPHP worker audit](docs/FRANKENPHP-WORKER-AUDIT.md)
+- [Concurrency](docs/CONCURRENCY.md)
 - [Demo with FrankenPHP](docs/DEMO-FRANKENPHP.md)
 - [PSR compliance](docs/PSR.md)
 - [GitHub CI](docs/GITHUB_CI.md)

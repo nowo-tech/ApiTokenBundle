@@ -12,6 +12,7 @@ use Nowo\ApiTokenBundle\Contract\ApiTokenIssuerInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenPolicyInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenSettingsProviderInterface;
 use Nowo\ApiTokenBundle\Contract\Event\ApiTokenIssuedEvent;
+use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenConflictException;
 use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenIssueRefusedException;
 use Nowo\ApiTokenBundle\Contract\Exception\InvalidApiTokenArgumentException;
 use Nowo\ApiTokenBundle\Contract\IssuedToken;
@@ -41,8 +42,10 @@ use function trim;
  *
  * Order: module switch, policy gate, owner resolved and active, name and channel, grants (registry, policy modules, module switches), reach
  * (allow-everything, the owner's choices, max entries), expiry (1 … min(`expiry.max_days`, policy, 365)), then, in one
- * transaction, the live-token cap and the per-owner name check, and the insert. The lookup id is regenerated on a
- * collision (3 tries). {@see ApiTokenIssuedEvent} is dispatched after commit.
+ * transaction under the owner's lock row ({@see ApiTokenStoreInterface::lockOwner()}, so concurrent issues for one
+ * owner cannot exceed the cap), the live-token cap and the per-owner name check, and the insert. The lookup id is
+ * regenerated on a collision (3 tries). {@see ApiTokenIssuedEvent} is dispatched after commit. A lock conflict that
+ * outlives the store's replays is thrown as {@see ApiTokenConflictException} (`CONFLICT_001`).
  */
 final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
 {
@@ -137,6 +140,9 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
                 $this->store->transactional(
                     // @igor-ignore - Closure passed to one transactional() call and released when it returns; never stored.
                     function () use ($token, $owner, $now): void {
+                        // REQ-RUNTIME-003 rule 4: the owner's lock row first, so a concurrent issue cannot pass the
+                        // cap or the name check between this count and the insert.
+                        $this->store->lockOwner($owner);
                         if ($this->store->countLive($owner, $now) >= $this->maxPerOwner) {
                             throw new ApiTokenIssueRefusedException(ApiTokenIssueRefusedException::TOO_MANY, sprintf('An owner holds at most %d live tokens.', $this->maxPerOwner));
                         }

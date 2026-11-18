@@ -54,7 +54,7 @@ use function trim;
 
 /**
  * The S1 functional suite, run once per host kind (standard and DDD) on the configured database (SQLite locally and
- * in the coverage job; MySQL 8.4 and PostgreSQL 17 in the CI database job).
+ * in the coverage job; MySQL 8.4, MariaDB 11.4 and PostgreSQL 16 in the CI database job).
  */
 abstract class CoreFunctionalTestCase extends KernelTestCase
 {

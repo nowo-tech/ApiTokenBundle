@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\ApiTokenBundle\Infrastructure\Console;
 
 use Nowo\ApiTokenBundle\Contract\ApiTokenIssuerInterface;
+use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenConflictException;
 use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenIssueRefusedException;
 use Nowo\ApiTokenBundle\Contract\Exception\InvalidApiTokenArgumentException;
 use Nowo\ApiTokenBundle\Contract\Grants;
@@ -80,6 +81,10 @@ final class IssueTokenCommand extends Command
             $errors->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
 
             return Command::INVALID;
+        } catch (ApiTokenConflictException $conflict) {
+            $errors->writeln(sprintf('<error>%s: %s</error>', $conflict->conflictCode->value, $conflict->getMessage()));
+
+            return Command::FAILURE;
         }
 
         $errors->writeln(sprintf('Token "%s" (id %s, lookup %s) expires %s. It is shown only now:', $issued->token->name, $issued->token->id->value, $issued->token->lookupId->value, $issued->token->expiresAt->format('Y-m-d H:i:s \U\T\C')));

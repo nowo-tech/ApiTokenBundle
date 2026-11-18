@@ -8,6 +8,7 @@ use Closure;
 use DateTimeImmutable;
 use Nowo\ApiTokenBundle\Contract\ApiTokenRevokerInterface;
 use Nowo\ApiTokenBundle\Contract\Event\ApiTokenRevokedEvent;
+use Nowo\ApiTokenBundle\Contract\Exception\ApiTokenConflictException;
 use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\RevocationReason;
 use Nowo\ApiTokenBundle\Contract\TokenId;
@@ -27,6 +28,10 @@ use function count;
  * A failing listener is logged and never undoes the revocation or stops the other listeners.
  *
  * The owner is re-checked in PHP (`===`, audit LQ) before anything is deleted.
+ *
+ * Each batch is one transaction. A lock conflict is thrown as {@see ApiTokenConflictException}: `CONFLICT_001` when
+ * no batch of the call was committed, `CONFLICT_002` (read again, do not repeat blindly) when earlier batches of
+ * {@see self::revokeAll()} or {@see self::purgeExpired()} were.
  */
 final readonly class ApiTokenRevoker implements ApiTokenRevokerInterface
 {
@@ -63,11 +68,15 @@ final readonly class ApiTokenRevoker implements ApiTokenRevokerInterface
     public function revokeAll(OwnerRef $owner, RevocationReason $reason, ?OwnerRef $actor = null): int
     {
         $total = 0;
-        do {
-            $batch   = $this->store->ofOwner($owner, self::BATCH);
-            $deleted = $batch === [] ? 0 : $this->deleteAll($batch, $reason, $actor);
-            $total += $deleted;
-        } while ($deleted > 0 && count($batch) === self::BATCH);
+        try {
+            do {
+                $batch   = $this->store->ofOwner($owner, self::BATCH);
+                $deleted = $batch === [] ? 0 : $this->deleteAll($batch, $reason, $actor);
+                $total += $deleted;
+            } while ($deleted > 0 && count($batch) === self::BATCH);
+        } catch (ApiTokenConflictException $conflict) {
+            throw $total > 0 ? $conflict->afterPartialCommit() : $conflict;
+        }
 
         return $total;
     }
@@ -91,39 +100,45 @@ final readonly class ApiTokenRevoker implements ApiTokenRevokerInterface
      */
     public function purgeExpired(DateTimeImmutable $cutoff, int $batchSize = self::BATCH, ?Closure $continue = null): int
     {
-        $total = 0;
-        $after = null;
-        do {
-            $batch = $this->store->expiredBatch($cutoff, $batchSize, $after);
-            if ($batch === []) {
-                break;
-            }
-            $after = $batch[count($batch) - 1]['id'];
-            /** @var array{count: int, tokens: list<ApiToken>} $deleted */
-            $deleted = $this->store->transactional(
-                // @igor-ignore - Closure passed to one transactional() call and released when it returns; never stored.
-                function () use ($batch): array {
-                    $count  = 0;
-                    $tokens = [];
-                    foreach ($batch as $row) {
-                        if ($this->store->deleteRow($row['id'])) {
-                            ++$count;
-                            if ($row['token'] instanceof ApiToken) {
-                                $tokens[] = $row['token'];
+        $total     = 0;
+        $after     = null;
+        $committed = false;
+        try {
+            do {
+                $batch = $this->store->expiredBatch($cutoff, $batchSize, $after);
+                if ($batch === []) {
+                    break;
+                }
+                $after = $batch[count($batch) - 1]['id'];
+                /** @var array{count: int, tokens: list<ApiToken>} $deleted */
+                $deleted = $this->store->transactional(
+                    // @igor-ignore - Closure passed to one transactional() call and released when it returns; never stored.
+                    function () use ($batch): array {
+                        $count  = 0;
+                        $tokens = [];
+                        foreach ($batch as $row) {
+                            if ($this->store->deleteRow($row['id'])) {
+                                ++$count;
+                                if ($row['token'] instanceof ApiToken) {
+                                    $tokens[] = $row['token'];
+                                }
                             }
                         }
-                    }
 
-                    return ['count' => $count, 'tokens' => $tokens];
-                },
-                function (array $deleted): void {
-                    foreach ($deleted['tokens'] as $token) {
-                        $this->afterRevoke($token, RevocationReason::Expired, null);
-                    }
-                },
-            );
-            $total += $deleted['count'];
-        } while (count($batch) === $batchSize && (!$continue instanceof Closure || $continue()));
+                        return ['count' => $count, 'tokens' => $tokens];
+                    },
+                    function (array $deleted): void {
+                        foreach ($deleted['tokens'] as $token) {
+                            $this->afterRevoke($token, RevocationReason::Expired, null);
+                        }
+                    },
+                );
+                $total += $deleted['count'];
+                $committed = true;
+            } while (count($batch) === $batchSize && (!$continue instanceof Closure || $continue()));
+        } catch (ApiTokenConflictException $conflict) {
+            throw $committed ? $conflict->afterPartialCommit() : $conflict;
+        }
 
         return $total;
     }

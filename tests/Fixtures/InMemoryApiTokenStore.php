@@ -15,6 +15,7 @@ use Nowo\ApiTokenBundle\Domain\LookupIdTakenException;
 use RuntimeException;
 use Throwable;
 
+use function array_shift;
 use function array_slice;
 use function array_values;
 use function strcmp;
@@ -39,8 +40,18 @@ class InMemoryApiTokenStore implements ApiTokenStoreInterface
 
     public ?Throwable $touchFailure = null;
 
+    /** @var list<string> owners locked through lockOwner(), as "type:id" */
+    public array $locked = [];
+
+    /** @var list<Throwable|null> one entry per transactional() call: thrown instead of running the work, or null to run it */
+    public array $transactionFailures = [];
+
     public function transactional(Closure $work, ?Closure $afterCommit = null): mixed
     {
+        $failure = array_shift($this->transactionFailures);
+        if ($failure instanceof Throwable) {
+            throw $failure;
+        }
         $backup = $this->tokens;
         try {
             $result = $work();
@@ -54,6 +65,11 @@ class InMemoryApiTokenStore implements ApiTokenStoreInterface
         }
 
         return $result;
+    }
+
+    public function lockOwner(OwnerRef $owner): void
+    {
+        $this->locked[] = $owner->type . ':' . $owner->id;
     }
 
     public function insert(ApiToken $token): void

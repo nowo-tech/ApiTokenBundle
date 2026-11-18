@@ -9,15 +9,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Concurrency (REQ-RUNTIME-003, [CONCURRENCY.md](CONCURRENCY.md)): a lock conflict (deadlock, lock wait timeout,
+  serialization failure) in a token write is replayed up to `concurrency.attempts` times when the store opened the
+  transaction, then thrown as `ApiTokenConflictException` with `CONFLICT_001` (nothing committed) or `CONFLICT_002`
+  (an earlier batch of `revokeAll()` / the purge was committed, or a savepoint was lost). `ApiTokenConflictListener`
+  answers it with 409 (`conflict_response.status`, or 503), `X-Conflict-Code` and, for `CONFLICT_001` only,
+  `Retry-After`, using the request commit watermark of transaction-doctrine 1.6. The commands exit 1 with the code.
+- Configuration `concurrency` (`attempts`, `lock_timeout_ms`: PostgreSQL `SET LOCAL lock_timeout` of a unit the store
+  opens) and `conflict_response` (`status`, `retry_after`).
+- Table `<prefix>api_token_owner_lock` (`ApiTokenOwnerLock`, attribute twin `ApiTokenOwnerLockRecord`) and
+  `ApiTokenStoreInterface::lockOwner()`.
+- Two-connection race tests (a second PHP process holds real row locks) and a MariaDB 11.4 leg in the required
+  `Databases` job (now SQLite, MySQL 8.4, MariaDB 11.4, PostgreSQL 16).
 - Committed WebP demo screenshot (`docs/images/demo/overview.webp`) captured by Playwright, `make demo-screenshots` and a README image (REQ-DEMO-013)
 
 ### Changed
 
+- Requires `nowo-tech/transaction-doctrine` ^1.6 (and `nowo-tech/transaction-contract` ^1.0): the store's units run
+  through `DoctrineTransactionRunner::forConnection()`, which repairs the nesting level after a failed nested unit.
 - Demo shell rebuilt on UiKit's admin layout and default theme, no Bootstrap/CDN CSS; the demo requires `nowo-tech/ui-kit-bundle` (REQ-DEMO-014)
 - Demo: Playwright smoke e2e (`make -C demo/symfony8 test-e2e`); screenshots wait for the S3 UI (REQ-DEMO-013)
 
 - Demo `.gitignore` ignores `/.pnpm-store` (REQ-GITIGNORE-003)
 - README: `## Requirements` moved right after `## Installation` (REQ-DOCS-019)
+
+### Fixed
+
+- The live-token cap (`max_per_owner`) could be exceeded by concurrent issues for one owner (count-then-insert): the
+  issuer now takes the owner's lock row before it counts and checks the name. Contention only, no GHSA.
+- A lock conflict while issuing or revoking surfaced as a 500; it is now a 409 with a conflict code.
 
 ## [0.1.0] - 2026-11-11
 

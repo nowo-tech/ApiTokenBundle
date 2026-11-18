@@ -32,12 +32,14 @@ use Nowo\ApiTokenBundle\Domain\ApiTokenStoreInterface;
 use Nowo\ApiTokenBundle\Infrastructure\Console\IssueTokenCommand;
 use Nowo\ApiTokenBundle\Infrastructure\Console\PurgeExpiredTokensCommand;
 use Nowo\ApiTokenBundle\Infrastructure\Doctrine\ApiTokenMetadataListener;
+use Nowo\ApiTokenBundle\Infrastructure\Http\ApiTokenConflictListener;
 use Nowo\ApiTokenBundle\Infrastructure\Owner\DoctrineOwnerResolver;
 use Nowo\ApiTokenBundle\Infrastructure\Owner\UserCheckerOwnerStatus;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitMiddleware;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitQueue;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitQueueResetListener;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\DbalApiTokenStore;
+use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponsePolicy;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -69,6 +71,9 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
 
     /** Tag of {@see ModuleDefinitionProviderInterface} services. */
     public const TAG_MODULE_PROVIDER = 'nowo_api_token.module_provider';
+
+    /** Service id of the bundle's conflict answer policy (`conflict_response`). */
+    public const CONFLICT_POLICY = 'nowo_api_token.conflict_response_policy';
 
     /** Doctrine mapping name of the bundle's table. */
     public const MAPPING_NAME = 'NowoApiTokenBundle';
@@ -144,7 +149,11 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         /** @var array{version: int, pepper: string|null} $hash */
         $hash = $config['hash'];
         /** @var array{max_seconds: int, batch_size: int} $messenger */
-        $messenger   = $config['messenger'];
+        $messenger = $config['messenger'];
+        /** @var array{attempts: int, lock_timeout_ms: int} $concurrency */
+        $concurrency = $config['concurrency'];
+        /** @var array{status: int, retry_after: int} $conflict */
+        $conflict    = $config['conflict_response'];
         $maxPerOwner = $config['max_per_owner'];
         $logger      = new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
         $clock       = new Reference('clock', ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
@@ -185,8 +194,15 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
             ->setArguments([$doctrine['table_prefix']])
             ->addTag('doctrine.event_listener', ['event' => 'loadClassMetadata']);
         $container->register(DbalApiTokenStore::class, DbalApiTokenStore::class)
-            ->setArguments([new Reference('doctrine'), new Reference(AfterCommitQueue::class), $doctrine['entity_manager'], $doctrine['table_prefix'], $logger]);
+            ->setArguments([
+                new Reference('doctrine'), new Reference(AfterCommitQueue::class), $doctrine['entity_manager'], $doctrine['table_prefix'], $logger,
+                $concurrency['attempts'], $concurrency['lock_timeout_ms'], $conflict['retry_after'],
+            ]);
         $container->setAlias(ApiTokenStoreInterface::class, DbalApiTokenStore::class);
+        $container->register(self::CONFLICT_POLICY, ConflictResponsePolicy::class)->setArguments([$conflict['status'], $conflict['retry_after']]);
+        $container->register(ApiTokenConflictListener::class, ApiTokenConflictListener::class)
+            ->setArguments([new Reference(self::CONFLICT_POLICY)])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => ApiTokenConflictListener::PRIORITY]);
 
         $this->service($container, ApiTokenSettingsProviderInterface::class, $config['settings_provider'], (new Definition(ConfigSettingsProvider::class))->setArguments([true, []]));
         $this->service($container, ReachProviderInterface::class, $reach['provider'], new Definition(NoReachChoices::class));

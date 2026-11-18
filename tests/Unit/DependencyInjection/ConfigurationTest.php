@@ -27,6 +27,8 @@ final class ConfigurationTest extends TestCase
         self::assertSame(['allow_everything' => true, 'provider' => null, 'max_entries' => 200], $config['reach']);
         self::assertSame(['default_days' => 90, 'max_days' => 365, 'choices' => [7, 30, 90, 365], 'purge_after_days' => 30, 'notify_before_days' => null], $config['expiry']);
         self::assertSame(20, $config['max_per_owner']);
+        self::assertSame(['attempts' => 3, 'lock_timeout_ms' => 5000], $config['concurrency']);
+        self::assertSame(['status' => 409, 'retry_after' => 1], $config['conflict_response']);
         self::assertSame(['enabled' => true, 'fresh_seconds' => 300, 'max_attempts' => 5, 'gate' => null], $config['reauth']);
         self::assertSame([
             'cache_pool'        => 'cache.rate_limiter',
@@ -120,6 +122,8 @@ final class ConfigurationTest extends TestCase
         yield 'on failure' => [['firewall' => ['on_failure' => 'deny']], 'nowo_api_token.firewall.on_failure'];
         yield 'api prefix' => [['api' => ['prefix' => '/api/']], 'Expected an absolute path without a trailing slash'];
         yield 'ui path' => [['web_ui' => ['path_prefix' => 'account']], 'Expected an absolute path without a trailing slash'];
+        yield 'conflict status' => [['conflict_response' => ['status' => 500]], 'nowo_api_token.conflict_response.status'];
+        yield 'attempts' => [['concurrency' => ['attempts' => 0]], 'nowo_api_token.concurrency.attempts'];
         yield 'admin roles' => [['admin_ui' => ['security' => ['access_roles' => []]]], 'nowo_api_token.admin_ui.security.access_roles'];
     }
 

@@ -74,6 +74,14 @@ final class IssuerTest extends ServiceTestCase
         self::assertSame(1, $this->events[0] instanceof ApiTokenIssuedEvent ? $this->events[0]->reachSummary : null);
     }
 
+    public function testTheCapIsCheckedUnderTheOwnerLock(): void
+    {
+        $owner = new OwnerRef('user', '42');
+        $this->issuer()->issue(new IssueRequest($owner, 'One', new Grants(['tasks' => 'read']), Reach::everything(), 1));
+
+        self::assertSame(['user:42'], $this->store->locked);
+    }
+
     public function testCapAndDuplicateNameRefusals(): void
     {
         $owner = new OwnerRef('user', '42');

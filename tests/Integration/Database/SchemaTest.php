@@ -10,6 +10,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\ApiTokenBundle\Domain\ApiToken;
+use Nowo\ApiTokenBundle\Domain\ApiTokenOwnerLock;
+use Nowo\ApiTokenBundle\Infrastructure\Doctrine\Entity\ApiTokenOwnerLockRecord;
 use Nowo\ApiTokenBundle\Infrastructure\Doctrine\Entity\ApiTokenRecord;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\Host;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\KernelTestCase;
@@ -34,6 +36,20 @@ final class SchemaTest extends KernelTestCase
         $indexes = array_keys($xml->getIndexes());
         sort($indexes);
         self::assertSame(['idx_nowo_api_token_expires', 'idx_nowo_api_token_owner', 'primary', 'uniq_nowo_api_token_legacy', 'uniq_nowo_api_token_lookup', 'uniq_nowo_api_token_owner_name'], $indexes);
+    }
+
+    public function testTheOwnerLockTableIsTheSameInBothMappings(): void
+    {
+        $xml       = $this->table(['doctrine' => ['mapping' => 'xml']], ApiTokenOwnerLock::class);
+        $attribute = $this->table(['doctrine' => ['mapping' => 'attribute']], ApiTokenOwnerLockRecord::class);
+
+        self::assertSame('nowo_api_token_owner_lock', $xml->getName());
+        self::assertSame($this->describe($xml), $this->describe($attribute));
+        self::assertSame(['owner_type', 'owner_id'], $xml->getPrimaryKey()?->getColumns());
+        if ($this->platformIsMySql) {
+            self::assertSame('utf8mb4_bin', $xml->getColumn('owner_id')->getPlatformOptions()['collation'] ?? null);
+            self::assertSame('ascii_bin', $xml->getColumn('owner_type')->getPlatformOptions()['collation'] ?? null);
+        }
     }
 
     public function testCollationsFollowThePlatform(): void

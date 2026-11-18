@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nowo\ApiTokenBundle\Domain\ApiTokenOwnerLock (REQ-RUNTIME-003 rule 4): the per-owner issue lock row. The table name
+  gets the configured doctrine.table_prefix, and owner_type / owner_id a binary collation on MySQL / MariaDB, through
+  Nowo\ApiTokenBundle\Infrastructure\Doctrine\ApiTokenMetadataListener.
+-->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\ApiTokenBundle\Domain\ApiTokenOwnerLock" table="api_token_owner_lock">
+        <id name="ownerType" type="string" column="owner_type" length="32"/>
+        <id name="ownerId" type="string" column="owner_id" length="128"/>
+
+        <field name="version" type="integer" column="version"/>
+    </entity>
+</doctrine-mapping>

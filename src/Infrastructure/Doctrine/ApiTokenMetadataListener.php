@@ -8,6 +8,8 @@ use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
 use LogicException;
 use Nowo\ApiTokenBundle\Domain\ApiToken;
+use Nowo\ApiTokenBundle\Domain\ApiTokenOwnerLock;
+use Nowo\ApiTokenBundle\Infrastructure\Doctrine\Entity\ApiTokenOwnerLockRecord;
 use Nowo\ApiTokenBundle\Infrastructure\Doctrine\Entity\ApiTokenRecord;
 use Throwable;
 
@@ -17,15 +19,28 @@ use function str_replace;
 
 /**
  * Applies `doctrine.table_prefix` to the token table and its index names (`uniq_<prefix>api_token_lookup`, REQ-ORM-002)
- * and, on MySQL / MariaDB, a binary collation to the identifier columns (audit LQ): `ascii_bin` for the id-like ascii
- * columns, `utf8mb4_bin` for `owner_id` and `name_key`. PostgreSQL and SQLite compare exactly by default and need nothing.
+ * and to the owner lock table (`<prefix>api_token_owner_lock`), and, on MySQL / MariaDB, a binary collation to the
+ * identifier columns (audit LQ): `ascii_bin` for the id-like ascii columns, `utf8mb4_bin` for `owner_id` and
+ * `name_key`. PostgreSQL and SQLite compare exactly by default and need nothing.
  *
- * Touches only the bundle's two mapped classes, on whichever entity manager maps them (standard and DDD hosts).
+ * Touches only the bundle's mapped classes (each with its attribute twin), on whichever entity manager maps them
+ * (standard and DDD hosts).
  */
 final readonly class ApiTokenMetadataListener
 {
     /** Unprefixed table name. */
     public const TABLE = 'api_token';
+
+    /** Unprefixed name of the per-owner issue lock table (REQ-RUNTIME-003 rule 4). */
+    public const LOCK_TABLE = 'api_token_owner_lock';
+
+    /** Unprefixed table of each mapped class. */
+    private const TABLES = [
+        ApiToken::class                => self::TABLE,
+        ApiTokenRecord::class          => self::TABLE,
+        ApiTokenOwnerLock::class       => self::LOCK_TABLE,
+        ApiTokenOwnerLockRecord::class => self::LOCK_TABLE,
+    ];
 
     /** Columns that hold ascii identifiers or hashes. */
     private const ASCII_COLUMNS = ['id', 'lookup_id', 'secret_hash', 'owner_type', 'legacy_hash'];
@@ -42,12 +57,13 @@ final readonly class ApiTokenMetadataListener
      */
     public function loadClassMetadata(LoadClassMetadataEventArgs $args): void
     {
-        $metadata = $args->getClassMetadata();
-        if (!in_array($metadata->getName(), [ApiToken::class, ApiTokenRecord::class], true)) {
+        $metadata   = $args->getClassMetadata();
+        $unprefixed = self::TABLES[$metadata->getName()] ?? null;
+        if ($unprefixed === null) {
             return;
         }
 
-        $table = ['name' => $this->tablePrefix . self::TABLE];
+        $table = ['name' => $this->tablePrefix . $unprefixed];
         foreach (['indexes', 'uniqueConstraints'] as $key) {
             $renamed = [];
             foreach ($metadata->table[$key] ?? [] as $name => $definition) {

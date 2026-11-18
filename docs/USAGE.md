@@ -131,8 +131,12 @@ $revoker->revokeAll($owner, RevocationReason::OwnerAll);
 - **Revocation deletes the row**, runs the tagged `TokenRevocationListenerInterface` services, then dispatches
   `ApiTokenRevokedEvent`, all after the commit. A failing listener is logged and never undoes the revocation.
 - **Names** are unique per owner, case-insensitively (database unique index on `owner_type, owner_id, name_key`). The
-  live-token cap (`max_per_owner`) is checked inside the issue transaction; two concurrent issues may exceed it by one
-  or two (the S3 per-owner issue limiter bounds that).
+  live-token cap (`max_per_owner`) is checked inside the issue transaction under the owner's lock row, so concurrent
+  issues for one owner cannot exceed it ([CONCURRENCY.md](CONCURRENCY.md)).
+- **Lock conflicts:** a deadlock or lock wait timeout that outlives the store's replays throws
+  `ApiTokenConflictException` (`conflictCode`: `CONFLICT_001` retry is safe, `CONFLICT_002` read again first). From a
+  controller it is answered 409 with `X-Conflict-Code` (and `Retry-After` for `CONFLICT_001`); from a command or a
+  handler, catch it ([CONCURRENCY.md](CONCURRENCY.md#conflict-codes)).
 - **Inside your transaction:** called while your transaction is open on the same connection, the writes join it and
   the listeners and events wait for your outermost commit (they are dropped on rollback). Note that `issue()` then
   returns the secret before your commit and `revoke()` answers true even if you later roll back: issue and revoke
