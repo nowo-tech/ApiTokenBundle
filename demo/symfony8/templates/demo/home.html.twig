@@ -1,19 +1,25 @@
 {% extends 'base.html.twig' %}
 
+{% block nowo_ui_page_header %}
+    {{ include(nowo_ui_partial('page_header'), {
+        title: 'API Token Bundle',
+        intro: 'Personal API tokens for Symfony: hashed lookup tokens with per-module grants, a tenant reach, mandatory expiry, revocation, rate limits and audit events, one Bearer authenticator for every API and a UiKit account and operator UI.',
+    }) }}
+{% endblock %}
+
 {% block body %}
-    <h1>API Token Bundle <span class="nowo-ui-badge">S0 scaffold</span></h1>
-    <p>Personal API tokens for Symfony: hashed lookup tokens with per-module grants, a tenant reach, mandatory expiry, revocation, rate limits and audit events, one Bearer authenticator for every API and a UiKit account and operator UI.</p>
-    <p>
-        The package is built slice by slice from its design contract. S0 ships the bundle class and its strict
-        configuration tree; the features arrive with the next slices (see <code class="nowo-ui-code">docs/ROADMAP.md</code>).
-    </p>
-    <div class="nowo-ui-table-wrap"><table class="nowo-ui-table" data-testid="demo-status">
-        <tbody>
-            <tr><th scope="row">Bundle</th><td><code class="nowo-ui-code">Nowo\ApiTokenBundle\NowoApiTokenBundle</code> registered, <code class="nowo-ui-code">nowo_api_token.enabled</code> = <strong>{{ enabled ? 'true' : 'false' }}</strong></td></tr>
-            <tr><th scope="row">API prefix parameter</th><td><code class="nowo-ui-code">%nowo_api_token.api_prefix%</code> = <code class="nowo-ui-code">{{ api_prefix }}</code></td></tr>
-            <tr><th scope="row">Table prefix</th><td><code class="nowo-ui-code">{{ table_prefix }}</code></td></tr>
-            <tr><th scope="row">Database</th><td>{{ database is null ? 'not reachable' : 'MySQL ' ~ database }}</td></tr>
-            <tr><th scope="row">FrankenPHP</th><td>{{ worker ? 'worker mode (kernel kept alive)' : 'classic mode' }}</td></tr>
-        </tbody>
-    </table></div>
+    {% embed '@NowoUiKit/demo_platform/_section.html.twig' with {title: 'Status', intro: 'The package is built slice by slice from its design contract. S0 ships the bundle class and its strict configuration tree; the features arrive with the next slices (see docs/ROADMAP.md).', kind: 'detail', testid: 'demo-status-section'} %}
+        {% block section_actions %}<span class="nowo-ui-badge nowo-ui-badge--neutral">S0 scaffold</span>{% endblock %}
+        {% block section_body %}
+            <table class="nowo-ui-table" data-testid="demo-status">
+                <tbody>
+                    <tr><th scope="row">Bundle</th><td><code class="nowo-ui-code">Nowo\ApiTokenBundle\NowoApiTokenBundle</code> registered, <code class="nowo-ui-code">nowo_api_token.enabled</code> = <strong>{{ enabled ? 'true' : 'false' }}</strong></td></tr>
+                    <tr><th scope="row">API prefix parameter</th><td><code class="nowo-ui-code">%nowo_api_token.api_prefix%</code> = <code class="nowo-ui-code">{{ api_prefix }}</code></td></tr>
+                    <tr><th scope="row">Table prefix</th><td><code class="nowo-ui-code">{{ table_prefix }}</code></td></tr>
+                    <tr><th scope="row">Database</th><td>{{ database is null ? 'not reachable' : 'MySQL ' ~ database }}</td></tr>
+                    <tr><th scope="row">FrankenPHP</th><td>{{ worker ? 'worker mode (kernel kept alive)' : 'classic mode' }}</td></tr>
+                </tbody>
+            </table>
+        {% endblock %}
+    {% endembed %}
 {% endblock %}
