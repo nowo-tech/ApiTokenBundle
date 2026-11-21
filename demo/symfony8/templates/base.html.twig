@@ -1,28 +1,17 @@
-{#- REQ-DEMO-014: the demo shell is UiKit's admin layout with UiKit's default theme (nowo-ui.css from the bundle's own
-    asset package, no CSS framework, no CDN). -#}
-{% extends '@NowoUiKit/layout/admin.html.twig' %}
-
+{#- REQ-DEMO-014: the demo runs inside UiKit's shared demo platform shell. This file only declares the demo. -#}
+{% extends '@NowoUiKit/demo_platform/layout.html.twig' %}
+{% set nowo_ui_demo_platform = {
+    bundle: 'API Token',
+    home_route: 'demo_home',
+    repository: 'https://github.com/nowo-tech/ApiTokenBundle',
+    translation_domain: false,
+    nav: [
+        {label: 'Home', route: 'demo_home', section: 'API Token'},
+    ],
+} %}
 {% block nowo_ui_document_title %}{% block title %}API Token Bundle demo{% endblock %}{% endblock %}
 
-{% block nowo_ui_navigation %}
-    {% set _route = app.request.attributes.get('_route') %}
-    <header class="nowo-ui-header" data-testid="demo-masthead">
-        <a class="nowo-ui-brand" href="{{ path('demo_home') }}">API Token Bundle</a>
-        <nav class="nowo-ui-menu" aria-label="API Token Bundle">
-            <a class="nowo-ui-link" href="{{ path('demo_home') }}"{% if _route == 'demo_home' %} aria-current="page"{% endif %}>Home</a>
-        </nav>
-        <div class="nowo-ui-header__end">
-            {{ include('@NowoUiKitBundle/partials/_theme_toggle.html.twig', { compact: true }, false) }}
-        </div>
-    </header>
+{% block nowo_ui_scripts %}
+    {{ parent() }}
+    {% block javascripts %}{% endblock %}
 {% endblock %}
-
-{% block nowo_ui_flashes %}
-    {% for type, css in {success: 'success', error: 'error', warning: 'warning', info: 'info'} %}
-        {% for message in app.flashes(type) %}
-            <div class="nowo-ui-flash nowo-ui-flash--{{ css }}" role="{{ type == 'error' ? 'alert' : 'status' }}">{{ message }}</div>
-        {% endfor %}
-    {% endfor %}
-{% endblock %}
-
-{% block nowo_ui_content %}{% block body %}{% endblock %}{% endblock %}
