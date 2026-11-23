@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3a2547ed311fdfac26a4a2b9e66bc72f",
+    "content-hash": "026709d9a27bf248ed631fa9a89fbfe2",
     "packages": [
         {
             "name": "doctrine/collections",
@@ -949,7 +949,7 @@
             "dist": {
                 "type": "path",
                 "url": "/var/api-token-bundle",
-                "reference": "e369d43d378cee8265c6ec8b845398f546fdf69a"
+                "reference": "57aeddfebe128a50da2e360840a11721e8bf8b09"
             },
             "require": {
                 "doctrine/dbal": "^4.0",
@@ -958,7 +958,7 @@
                 "nowo-tech/form-kit-bundle": "^2.24",
                 "nowo-tech/transaction-contract": "^1.0",
                 "nowo-tech/transaction-doctrine": "^1.8.1",
-                "nowo-tech/ui-kit-bundle": "^2.68",
+                "nowo-tech/ui-kit-bundle": "^2.69",
                 "php": ">=8.2 <8.6",
                 "psr/clock": "^1.0",
                 "psr/event-dispatcher": "^1.0",
@@ -988,7 +988,7 @@
             "require-dev": {
                 "doctrine/doctrine-bundle": "^2.13 || ^3.0",
                 "friendsofphp/php-cs-fixer": "^3.0",
-                "igor-php/igor-php": "^0.10.1",
+                "igor-php/igor-php": "^0.10.1 || ^0.11.0",
                 "nowo-tech/phpstan-frankenphp": "^1.3",
                 "phpstan/extension-installer": "^1.4",
                 "phpstan/phpstan": "^2.0",
@@ -1439,16 +1439,16 @@
         },
         {
             "name": "nowo-tech/ui-kit-bundle",
-            "version": "v2.68.0",
+            "version": "v2.69.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nowo-tech/UiKitBundle.git",
-                "reference": "b88274f85f5edbe2976debe53b0b6a766e7cba96"
+                "reference": "0100070003016d1ccb7b5d9a9f96b3aaa8852d34"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nowo-tech/UiKitBundle/zipball/b88274f85f5edbe2976debe53b0b6a766e7cba96",
-                "reference": "b88274f85f5edbe2976debe53b0b6a766e7cba96",
+                "url": "https://api.github.com/repos/nowo-tech/UiKitBundle/zipball/0100070003016d1ccb7b5d9a9f96b3aaa8852d34",
+                "reference": "0100070003016d1ccb7b5d9a9f96b3aaa8852d34",
                 "shasum": ""
             },
             "require": {
@@ -1538,8 +1538,8 @@
                 "issues": "https://github.com/nowo-tech/UiKitBundle/issues",
                 "source": "https://github.com/nowo-tech/UiKitBundle"
             },
-            "time": "2026-11-23T05:57:27+00:00",
-            "published-time": "2026-11-23T05:59:40+00:00"
+            "time": "2026-11-23T11:39:37+00:00",
+            "published-time": "2026-11-23T11:48:38+00:00"
         },
         {
             "name": "psr/cache",
