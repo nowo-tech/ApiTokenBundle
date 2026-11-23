@@ -100,6 +100,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   failing with a 500.
 - Audit ZAB-R-I1: SECURITY.md and USAGE.md tell hosts that log request bodies to mask `nowo_api_token_lookup[token]`
   and the re-auth password (HttpLogBundle `redaction.query_params` snippet).
+- Audit ZAB-S3-L1 (owner decision 2026-11-23): the one-time secret uses UiKit 2.69's `secret_once` partial and
+  `secret-once` runtime (requires `nowo-tech/ui-kit-bundle` ^2.69): printed exactly once as the text of one element,
+  masked with *Show* / *Copy*, wiped on hide, when the dialog closes and on `pagehide`; the account list loads the
+  runtime on every visit so the remote dialog fragment is upgraded too. TEMPLATES.md: overrides and the Turbo
+  `turbo-cache-control` meta. `make test-e2e` (Playwright on the rendered pages).
 - Documented: the operator page is not tenant-scoped (SECURITY, USAGE, CONFIGURATION), the *New token* double submit
   and *Revoke all* versus a concurrent issue (CONCURRENCY), and that 0.4.0 adopts UiKit's *secret once* reveal / copy
   mode before its tag (contract §6.1 / §8.1, ROADMAP; audit ZAB-S3-L1).

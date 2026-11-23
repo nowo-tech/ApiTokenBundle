@@ -9,7 +9,7 @@ COMPOSE_BIN := $(shell $(DOCKER_BIN) compose version >/dev/null 2>&1 && echo "$(
 COMPOSE     := $(COMPOSE_BIN) -f $(COMPOSE_FILE)
 SERVICE_PHP := php
 
-.PHONY: help up down down-dev build shell install ensure-up test test-coverage test-coverage-100 coverage-check validate-phpdoc coverage-php-percent cs-check cs-fix qa clean release-check release-check-demos demo-smoke composer-sync rector rector-dry phpstan igor update validate assets setup-hooks check-no-cursor-coauthor check-open-prs check-no-raw-html-form check-twig-extra validate-translations db-up test-with-db test-coverage-with-db update-deps strip-cursor-coauthor-from-history
+.PHONY: help up down down-dev build shell install ensure-up test test-coverage test-coverage-100 coverage-check validate-phpdoc coverage-php-percent cs-check cs-fix qa clean release-check release-check-demos demo-smoke composer-sync rector rector-dry phpstan igor update validate assets setup-hooks check-no-cursor-coauthor check-open-prs check-no-raw-html-form check-twig-extra validate-translations test-e2e db-up test-with-db test-coverage-with-db update-deps strip-cursor-coauthor-from-history
 
 help:
 	@echo "API Token Bundle - Development Commands"
@@ -28,6 +28,7 @@ help:
 	@echo "Tests:"
 	@echo "  test          Run PHPUnit tests (starts container if needed)"
 	@echo "  test-coverage Run tests with code coverage (starts container if needed)"
+	@echo "  test-e2e      Playwright check of the one-time secret on the rendered account pages"
 	@echo "Quality:"
 	@echo "  cs-check      Check code style"
 	@echo "  cs-fix        Fix code style"
@@ -98,6 +99,16 @@ ensure-up:
 
 test: ensure-up
 	$(COMPOSE) exec $(SERVICE_PHP) composer test
+
+# Playwright check of the one-time secret (UiKit secret_once, contract §6.1 / §8.1): PHPUnit renders the account pages
+# into tests/e2e/fixtures, then Chromium (official image, no host deps) runs tests/e2e against UiKit's real runtimes.
+PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.63.0-jammy
+
+test-e2e: ensure-up
+	@mkdir -p tests/e2e/fixtures tests/e2e/node_modules
+	$(COMPOSE) exec -T -e NOWO_E2E_FIXTURES=/app/tests/e2e/fixtures $(SERVICE_PHP) php vendor/bin/phpunit --no-coverage --filter 'StandardHostUiTest::(testIssuingNeedsAFreshReauthAndShowsTheSecretExactlyOnce|testDialogRequestsGetFragmentsAndTheSecretInTheDialog)'
+	$(DOCKER_BIN) run --rm -v "$(CURDIR):/app" -w /app/tests/e2e $(PLAYWRIGHT_IMAGE) \
+		bash -lc 'npm install --no-fund --no-audit && npx playwright test'
 
 test-coverage: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) composer test-coverage | tee coverage-php.txt

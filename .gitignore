@@ -53,3 +53,9 @@ playwright-report/
 
 # Local tool output
 /var/
+
+# Playwright check of the one-time secret (tests/e2e; fixtures hold throwaway test tokens, never committed)
+/tests/e2e/node_modules
+/tests/e2e/fixtures
+/tests/e2e/test-results
+/tests/e2e/playwright-report

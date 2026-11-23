@@ -44,7 +44,7 @@ Read for this contract (2026-11-11):
 | TimeTrackBundle | v1.18.0 | `Entity/ClientToken` (its own hashed client session tokens), `Client/*` hooks |
 | AuthKitBundle | v1.43.0 | no API token, no re-auth port, no account-security extension point; owner keys `user_type`/`user_id` |
 | UserKitBundle | v1.14.1 | `PersonalData/*` (eraser, export provider, tags), `Sessions/UserSessionsInterface`, `UserSessionsRevokedEvent` |
-| UiKitBundle | v2.47.0 | `_dialog`, `_open_modal_on_load`, Stimulus `temporary-reveal` + `clipboard-copy`, `View\ListPage`/`Table`/`SettingsPage` |
+| UiKitBundle | v2.69.0 | `_dialog`, `_open_modal_on_load`, `secret_once` partial + `secret-once` runtime (2.69), `View\ListPage`/`Table`/`SettingsPage` |
 | HttpLogBundle | v1.16.3 | `HttpLogRequestContextResolverInterface`, `HttpLogRequestContext`, `HttpLogUsageReaderInterface`, `HttpLogUsageEraserInterface` |
 | AuditKitBundle | v1.13.0 | `ActionLogRecorderInterface` |
 | Rules | 2026-11-11 | `BUNDLES_FIX_RULES.md` (architecture bar 1–8, worker mode, binary collation LQ, versioned API paths, new-bundle bar), `BUNDLES_FULL_SPECS_DETAILS.md`, app REQs `REQ-API-001…003`, `REQ-AUTH-013`, `REQ-ENCRYPT-002`, `REQ-SESSION-004`, `REQ-DATA-001…004` in `OTHER_FULL_SPECS_DETAILS.md` |
@@ -395,12 +395,11 @@ bt_     k7m2q9x4ab3c _ 43 chars base64url (32 random bytes)   + 6 chars base62 C
   - The secret exists only in `IssuedToken`, which goes into the POST response that created it. It is never put in a
     flash, the session, a log, an event, an exception message or the cache.
   - The page sends `Cache-Control: no-store` (and `private`).
-  - The dialog uses UiKit `temporary-reveal` with `clearOnHide` and `clipboard-copy`, so the plaintext leaves the DOM
-    when the person closes it (`REQ-ENCRYPT-002` UX).
-  - *Implementation note (S3, owner decision 2026-11-23, audit ZAB-S3-L1):* 0.4.0 PR #13 prints the secret once in a
-    plain `<code>` element (no second copy in a `value` attribute). Before the 0.4.0 tag it adopts UiKit's new
-    *secret once* reveal / copy mode (built in a UiKit PR), which keeps the secret as a single DOM node and wipes it
-    when the dialog closes and on `pagehide`; the bundle ships no script of its own for this.
+  - The dialog uses UiKit's `secret_once` partial and `secret-once` runtime (UiKit ≥ 2.69; owner decision 2026-11-23,
+    audit ZAB-S3-L1, resolved in 0.4.0): the secret is printed exactly once, as the text of one element (never in an
+    attribute or a second copy), masked with *Show* / *Copy* controls, and wiped in place when it is hidden
+    (`clear_on_hide`), when the dialog closes and on `pagehide`, so the plaintext leaves the DOM (`REQ-ENCRYPT-002`
+    UX). The page and the remote dialog fragment both send `Cache-Control: no-store, private`.
   - A reload shows the list only. A lost secret means a new token.
 
 ### 6.2 Verification (constant time, order fixed)
@@ -671,12 +670,8 @@ The page uses a UiKit `ListPage` scaffold with a settings intro. Its contents:
   - reach: *everything* or chosen places, with a searchable checklist and groups from `ReachChoice::$group`;
   - expiry choice.
 - **After create:** the response re-renders the page with `_open_modal_on_load` showing the secret once. The dialog
-  uses `temporary-reveal` (clearOnHide), `clipboard-copy`, the text "This is the only time you will see it", and
+  uses UiKit's `secret_once` (clear on hide, wiped on dialog close and `pagehide`, see §6.1), the text "This is the only time you will see it", and
   example `curl` lines with a `$TOKEN` placeholder (never the secret pasted into the example).
-  - *Implementation note (S3, owner decision 2026-11-23, audit ZAB-S3-L1):* 0.4.0 PR #13 prints the secret once in
-    a plain `<code>` element. Before the 0.4.0 tag the dialog adopts UiKit's *secret once* reveal / copy mode instead
-    of `temporary-reveal`: the secret stays a single DOM node and is wiped when the dialog closes and on `pagehide`
-    (see §6.1).
 - The empty state explains what a token is.
 - Every template can be overridden (`web_ui.templates.*`, REQ-TWIG-001). `docs/TEMPLATES.md` documents them. A
   `PageContractTestCase` subclass tests the page.

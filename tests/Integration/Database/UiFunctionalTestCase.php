@@ -42,6 +42,9 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 use function array_map;
 use function array_replace_recursive;
+use function file_put_contents;
+use function getenv;
+use function is_string;
 use function json_encode;
 use function serialize;
 use function substr;
@@ -109,7 +112,9 @@ abstract class UiFunctionalTestCase extends KernelTestCase
         self::assertSame(200, $client->getResponse()->getStatusCode(), $body);
         $tokens = $this->query()->ofOwner($this->host()->owner('alice'));
         self::assertCount(1, $tokens);
-        $secret = $crawler->filter('[data-testid="api-token-secret"]')->text();
+        $secret = $crawler->filter('[data-testid="api-token-secret"] [data-nowo-ui-secret-once-value]')->text();
+        self::assertStringContainsString('js/nowo-ui-secret-once.js', $body, 'the secret-once runtime is loaded');
+        $this->exportE2e('page.html', $body, $secret);
         self::assertStringStartsWith('nwt_' . $tokens[0]->lookupId->value . '_', $secret);
         self::assertSame(1, substr_count($body, $secret), 'the secret is printed exactly once');
         self::assertStringContainsString('no-store', (string) $client->getResponse()->headers->get('Cache-Control'));
@@ -365,6 +370,16 @@ abstract class UiFunctionalTestCase extends KernelTestCase
         self::assertSame(200, $client->getResponse()->getStatusCode(), (string) $client->getResponse()->getContent());
         self::assertStringNotContainsString('<html', (string) $client->getResponse()->getContent());
         self::assertCount(1, $crawler->filter('[data-testid="api-token-secret"]'));
+        $fragment = (string) $client->getResponse()->getContent();
+        $secret   = $crawler->filter('[data-nowo-ui-secret-once-value]')->text();
+        self::assertSame(1, substr_count($fragment, $secret), 'the fragment prints the secret exactly once');
+        self::assertStringContainsString('no-store', (string) $client->getResponse()->headers->get('Cache-Control'));
+        self::assertStringContainsString('private', (string) $client->getResponse()->headers->get('Cache-Control'));
+        $this->exportE2e('fragment.html', $fragment, $secret);
+        $list = $this->as($client, 'alice', 'GET', self::ACCOUNT);
+        self::assertStringContainsString('js/nowo-ui-secret-once.js', (string) $client->getResponse()->getContent(), 'the list loads the runtime for the dialog');
+        $this->exportE2e('list.html', (string) $client->getResponse()->getContent(), null);
+        self::assertCount(0, $list->filter('[data-nowo-ui-secret-once-value]'));
 
         $crawler = $client->request('GET', self::ACCOUNT . '/revoke-all', [], [], $dialog);
         $form    = $crawler->filter('form[name="nowo_api_token_revoke_all"]')->form();
@@ -591,6 +606,22 @@ abstract class UiFunctionalTestCase extends KernelTestCase
         self::assertIsObject($service);
 
         return $service;
+    }
+
+    /**
+     * Writes a rendered answer for the Playwright check of the one-time secret (tests/e2e, `make test-e2e`) when
+     * NOWO_E2E_FIXTURES is set; the standard host only (both host kinds render the same templates).
+     */
+    private function exportE2e(string $file, string $html, ?string $secret): void
+    {
+        $dir = getenv('NOWO_E2E_FIXTURES');
+        if (!is_string($dir) || $dir === '' || $this->host()->kind !== Host::STANDARD) {
+            return;
+        }
+        file_put_contents($dir . '/' . $file, $html);
+        if ($secret !== null) {
+            file_put_contents($dir . '/' . $file . '.secret', $secret);
+        }
     }
 
     private function choice(Form $form, string $name): ChoiceFormField

@@ -86,6 +86,8 @@ badge:
     destructive: "Agents mogen verwijderen"
     expires_soon: "Verloopt binnenkort"
 created:
+    secret_label: "API-token"
+    secret_hint: "Kopieer het nu: het wordt maar één keer getoond. Verbergen of dit venster sluiten wist het."
     title: "Uw nieuwe API-token"
     once: "Dit is de enige keer dat u het ziet."
     intro: "Kopieer het token “%name%” nu en bewaar het in een geheimenbeheerder. Kwijt? Trek het in en maak een nieuw."

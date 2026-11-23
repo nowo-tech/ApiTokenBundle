@@ -86,6 +86,8 @@ badge:
     destructive: "Les agents peuvent supprimer"
     expires_soon: "Expire bientôt"
 created:
+    secret_label: "Jeton d'API"
+    secret_hint: "Copiez-le maintenant : il n'est affiché qu'une fois. Le masquer ou fermer cette fenêtre l'efface."
     title: "Votre nouveau jeton d'API"
     once: "C'est la seule fois que vous le verrez."
     intro: "Copiez maintenant le jeton « %name% » et rangez-le dans un gestionnaire de secrets. Si vous le perdez, révoquez-le et créez-en un autre."

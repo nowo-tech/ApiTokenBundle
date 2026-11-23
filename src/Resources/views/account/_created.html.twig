@@ -1,17 +1,25 @@
 {#
-  The one-time secret (contract §6.1, §8.1): shown once, in the answer of the POST that created the token. The secret is
-  printed exactly once (the copy button reads it from the element, it is not repeated in an attribute); the curl lines
-  use a $TOKEN placeholder, never the secret. Variables: issued (Contract\IssuedToken), secret, list_href.
-  Override: web_ui.templates.created.
+  The one-time secret (contract §6.1, §8.1): shown once, in the answer of the POST that created the token, on the list
+  page (dialog opened on load) or as the remote dialog fragment. UiKit's `secret_once` partial prints the secret exactly
+  once, as the text of one element (no attribute or second copy); its `secret-once` runtime (loaded by the account list,
+  so it also upgrades this fragment when the remote dialog inserts it) masks it, reveals it, copies it, and wipes it
+  when it is hidden, when the dialog closes and on `pagehide`. Both answers are sent with `Cache-Control: no-store,
+  private`. The curl lines use a $TOKEN placeholder, never the secret.
+  Variables: issued (Contract\IssuedToken), secret, list_href. Override: web_ui.templates.created.
 #}
 {%- set _d = 'NowoApiTokenBundle' -%}
 <div class="nowo-api-token-created" data-testid="api-token-created">
     <p><strong>{{ 'created.once'|trans({}, _d) }}</strong></p>
     <p>{{ 'created.intro'|trans({'%name%': issued.token.name}, _d) }}</p>
-    <p><code id="nowo-api-token-secret" class="{{ nowo_ui_class('code', 'NowoApiTokenBundle') }}" data-testid="api-token-secret">{{ secret }}</code></p>
-    <p>
-        <button type="button" class="{{ nowo_ui_class('btn_primary', 'NowoApiTokenBundle') }}" data-nowo-ui-clipboard data-nowo-ui-clipboard-reveal hidden data-nowo-ui-clipboard-target="nowo-api-token-secret" data-nowo-ui-clipboard-label="{{ 'created.copy'|trans({}, _d) }}" data-nowo-ui-clipboard-done-label="{{ 'created.copied'|trans({}, _d) }}">{{ 'created.copy'|trans({}, _d) }}</button>
-    </p>
+    {{ include(nowo_ui_partial('secret_once'), {
+        secret: secret,
+        secret_id: 'nowo-api-token-secret',
+        label: 'created.secret_label'|trans({}, _d),
+        hint: 'created.secret_hint'|trans({}, _d),
+        clear_on_hide: true,
+        labels: {copy: 'created.copy'|trans({}, _d), copied: 'created.copied'|trans({}, _d)},
+        attr: {'data-testid': 'api-token-secret'},
+    }, false) }}
     <p>{{ 'created.example'|trans({}, _d) }}</p>
     <pre class="{{ nowo_ui_class('code', 'NowoApiTokenBundle') }}"><code>export TOKEN='…'
 curl -H "Authorization: Bearer $TOKEN" https://example.test/api/…</code></pre>

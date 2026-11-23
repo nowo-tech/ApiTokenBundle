@@ -28,6 +28,7 @@
     {% endif %}
 {% endblock %}
 
+{#- `secret-once` on every load: it also upgrades the one-time secret of the *New token* remote dialog fragment. -#}
 {% block nowo_ui_scripts %}
-    {{ include(nowo_ui_partial('scripts', page.bundle), {script_names: nowo_ui_script_names()|merge(['clipboard', 'open-modal'])}, false) }}
+    {{ include(nowo_ui_partial('scripts', page.bundle), {script_names: nowo_ui_script_names()|merge(['secret-once', 'open-modal'])}, false) }}
 {% endblock %}

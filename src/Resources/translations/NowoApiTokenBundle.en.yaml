@@ -86,6 +86,8 @@ badge:
     destructive: "Agents may delete"
     expires_soon: "Expires soon"
 created:
+    secret_label: "API token"
+    secret_hint: "Copy it now: it is shown only once. Hiding it or closing this dialog erases it."
     title: "Your new API token"
     once: "This is the only time you will see it."
     intro: "Copy the token “%name%” now and store it in a secret manager. If you lose it, revoke it and create a new one."

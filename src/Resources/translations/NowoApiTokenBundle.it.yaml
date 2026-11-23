@@ -86,6 +86,8 @@ badge:
     destructive: "Gli agenti possono eliminare"
     expires_soon: "Scade a breve"
 created:
+    secret_label: "Token API"
+    secret_hint: "Copialo ora: viene mostrato una sola volta. Nasconderlo o chiudere questa finestra lo cancella."
     title: "Il tuo nuovo token API"
     once: "È l'unica volta che lo vedrai."
     intro: "Copia ora il token «%name%» e salvalo in un gestore di segreti. Se lo perdi, revocalo e creane uno nuovo."
