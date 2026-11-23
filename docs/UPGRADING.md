@@ -8,6 +8,27 @@
 
 ## Unreleased
 
+From **0.2.x** (S2 firewall + limits):
+
+```bash
+composer update nowo-tech/api-token-bundle
+```
+
+- **New runtime dependencies** `symfony/security-http`, `symfony/http-foundation` and `symfony/rate-limiter`.
+- **A rate limiter cache pool is required** while `enabled: true`: `rate_limit.cache_pool` (default
+  `cache.rate_limiter`, defined by FrameworkBundle once `symfony/rate-limiter` is installed). The container refuses to
+  build when the pool does not exist. In production, back it with a store shared by every worker and server, e.g.
+  `framework.cache.pools.cache.rate_limiter.adapter: cache.adapter.redis`.
+- **Use the firewall authenticator** instead of calling `ApiTokenAuthenticatorInterface` from your own authenticator:
+  add `Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator` to the `custom_authenticators` of
+  a **stateless** firewall (a stateful one fails the build) and read `ApiTokenContext::current($request)` in your
+  controllers ([USAGE.md](USAGE.md#protecting-your-own-api)). Behind a reverse proxy, set
+  `framework.trusted_proxies`, or every client shares the proxy's failed-token budget.
+- `rate_limit.per_token` (100 / minute), `rate_limit.failed_per_ip` (20 / 15 minutes) now apply on those firewalls;
+  raise them for heavy integrations.
+- Hosts that construct `ApiTokenAuthenticator` themselves may pass a `ReachFilterChain` as the new last argument;
+  without it no reach filter runs.
+
 ## To 0.2.0
 
 From **0.1.0**:

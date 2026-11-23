@@ -7,7 +7,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- S2 firewall + limits (contract 221-A §6.3, §6.5, §6.7), registered with `enabled: true`:
+  - `Infrastructure\Security\ApiTokenFirewallAuthenticator` for the host's **stateless** firewalls
+    (`custom_authenticators`): the `Authorization` header only (`Bearer`, case-insensitive, or bare), a
+    `SelfValidatingPassport` for the token's user (the firewall's user checker runs), the principal and the rate
+    limit answer stamped on the request only after Symfony accepted the passport, and an entry point.
+  - `ApiTokenContext::current($request)` / `ApiTokenContext::rateLimit($request)`; earlier `_nowo_api_token*`
+    request attributes are removed before authenticating.
+  - `firewall.on_failure`: `pass` (default, the request goes on with no user and each API answers its own refusal)
+    or `unauthorized` (`401 {"err": "Invalid token", "ECODE": "TOKEN_000"}` with `WWW-Authenticate: Bearer`, and
+    `429 {"err": "Too many requests", "ECODE": "TOKEN_001"}` with `Retry-After` for a used-up budget). Every failure
+    kind answers identically.
+  - Rate limits in `rate_limit.cache_pool` (`symfony/rate-limiter` fixed windows): `ApiTokenRateLimiterInterface`
+    with `RateLimitState` / `RateLimitScope`; one bucket per token for every module (`per_token`), a write budget
+    (`writes`; unsafe methods with `count_rest_writes: true`) and failed tokens per client IP (`failed_per_ip`,
+    peeked before the presented value is parsed). The IP is keyed by an HMAC with `kernel.secret`.
+  - `ApiTokenAuthFailedEvent` (`failure`, `lookupId` only for tokens that exist, `clientIpHash`, `path`) on every
+    token failure; `ApiTokenEvents::AUTH_FAILED`.
+  - `ReachFilterInterface` (autoconfigured, tag `nowo_api_token.reach_filter`) chained in the authenticator's step 8
+    through `ReachFilterChain`, which intersects every answer with the reach it was given.
+  - Build checks (`FirewallPass`): the cache pool must exist; a firewall that lists the authenticator must be
+    stateless.
+  - Worker mode: `ApiTokenTokenStorageResetListener` removes the bundle's own security token from the token storage at
+    the end of each main request and before the next one (Symfony only clears it through the services resetter, so
+    with the kernel kept alive and not reset a request without a token would otherwise run as the previous request's
+    user). Worker test through the firewall (2,000 requests).
+  - Firewall functional suite for the standard and the DDD host; host-API integration guide in
+    [USAGE.md](USAGE.md#protecting-your-own-api).
+
 ### Changed
+
+- Requires `symfony/security-http`, `symfony/http-foundation` and `symfony/rate-limiter` (^7.4 || ^8.0) at runtime.
+- `ApiTokenAuthenticator` takes an optional `ReachFilterChain` (last constructor argument).
 
 - Demo: runs in UiKit's demo platform shell (`nowo-tech/ui-kit-bundle` ^2.60); the demo's own header is gone and the pages use the shell page headers and section cards. Demo only, no bundle change.
 - Requires `nowo-tech/transaction-doctrine` ^1.8.1 (fixes GHSA-9wh3-m3m5-jffx and GHSA-65w2-9r4h-848g).

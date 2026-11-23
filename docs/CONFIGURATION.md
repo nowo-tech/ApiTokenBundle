@@ -12,6 +12,7 @@ message that says so. It also needs a real account-status check: see [Owner stat
 ## Table of contents
 
 - [Full reference](#full-reference)
+- [Firewall and rate limits](#firewall-and-rate-limits)
 - [Owner status](#owner-status)
 - [Changes that invalidate every token](#changes-that-invalidate-every-token)
 - [Container parameters](#container-parameters)
@@ -69,8 +70,8 @@ nowo_api_token:
 | Key | Used from |
 | --- | --- |
 | `enabled`, `doctrine`, `owner`, `modules`, `token_prefix`, `checksum`, `hash`, `expiry` (except `choices`, `notify_before_days`), `max_per_owner`, `reach`, `settings_provider`, `messenger` (the purge command), `concurrency`, `conflict_response` | S1 |
-| `firewall`, `rate_limit` | S2 |
-| `reauth`, `web_ui`, `admin_ui`, `expiry.choices` | S3 |
+| `firewall`, `rate_limit` (except `issue_per_owner`) | S2 |
+| `reauth`, `web_ui`, `admin_ui`, `expiry.choices`, `rate_limit.issue_per_owner` | S3 |
 | `bridges`, `http_log`, `revoke_on_sessions_revoked` | S4 |
 | `api`, `legacy`, `schedule`, `expiry.notify_before_days` | S5 |
 
@@ -80,6 +81,26 @@ S1 service ids (all public aliases a host may replace through the keys above or 
 (`reach.provider`), `ApiTokenPolicyInterface`, `ApiTokenSettingsProviderInterface` (`settings_provider`), all in
 `Nowo\ApiTokenBundle\Contract`. Services implementing `TokenRevocationListenerInterface` or
 `ModuleDefinitionProviderInterface` are tagged automatically (autoconfiguration).
+
+S2 adds `ApiTokenRateLimiterInterface` (public alias of the default `symfony/rate-limiter` implementation) and the
+firewall authenticator service `Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator`, which
+you list in a firewall's `custom_authenticators`. Services implementing `ReachFilterInterface` are tagged
+`nowo_api_token.reach_filter` automatically and chained by tag priority.
+
+## Firewall and rate limits
+
+| Key | Effect |
+| --- | --- |
+| `firewall.on_failure: pass` (default) | A refused token lets the request through **with no user**; each API answers its own 401 / 403 / 404 (and its own 429, from `ApiTokenContext::rateLimit()`) |
+| `firewall.on_failure: unauthorized` | A refused token answers `401 {"err": "Invalid token", "ECODE": "TOKEN_000"}` with `WWW-Authenticate: Bearer`; a rate limit answers `429 {"err": "Too many requests", "ECODE": "TOKEN_001"}` with `Retry-After` |
+| `rate_limit.cache_pool` | The cache pool of every counter (default `cache.rate_limiter`, which FrameworkBundle defines when `symfony/rate-limiter` is installed). The container refuses to build when the pool does not exist. Use a pool **shared by every worker and server** (Redis, a database); a per-process array pool would give each worker its own budget |
+| `rate_limit.per_token` | Requests per token, one bucket for every module and protocol, consumed by the firewall once per authenticated request |
+| `rate_limit.writes` | Writes per token. With `count_rest_writes: true` the firewall consumes it for every unsafe method (`POST`, `PUT`, `PATCH`, `DELETE`); bridges consume it for their own writes (S4, McpKit tools) |
+| `rate_limit.failed_per_ip` | Failed tokens per client IP: peeked before the presented value is parsed (a blocked IP gets no database read), counted on every failure. The IP comes from `Request::getClientIp()`, so configure `framework.trusted_proxies` behind a proxy, or every client shares the proxy's budget |
+
+Every limit is a fixed window (`symfony/rate-limiter` `fixed_window`) without a lock (contract §10): two exactly
+concurrent requests may both take the last unit of a window, which over-admits by at most the number of concurrent
+workers. The IP is keyed by an HMAC with `kernel.secret`, never stored in clear.
 
 ## Owner status
 
@@ -121,6 +142,7 @@ only new tokens use HMAC.
 | `nowo_api_token.enabled` | `enabled` |
 | `nowo_api_token.api_prefix` | `api.prefix`: derive firewall patterns from it, e.g. `^%nowo_api_token.api_prefix%/(tasks\|wiki\|tokens)/` |
 | `nowo_api_token.table_prefix` | `doctrine.table_prefix` |
+| `nowo_api_token.rate_limit_pool` | `rate_limit.cache_pool` |
 | `nowo_api_token.config` | the processed tree, with `hash.pepper` redacted (the pepper stays only in the hasher service) |
 
 ## Translations

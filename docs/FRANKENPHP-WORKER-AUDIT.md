@@ -3,8 +3,8 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/api-token-bundle` (`symfony-bundle`) |
-| Audited revision | S1 core (unreleased, branch `feat/s1`) |
-| Audit date | 2026-11-12 |
+| Audited revision | S2 firewall + limits (unreleased, branch `feat/s2-firewall-limits`); S1 core audited 2026-11-12 |
+| Audit date | 2026-11-23 (S2), 2026-11-12 (S1) |
 | Method | Manual review of every file under `src/`; PHPStan `ruleset-classic` + `ruleset-worker-strict` + `ruleset-hardening`; Igor (`composer igor`); `WorkerRequestLoopTest` (one kernel, 2,000 requests, two owners alternating, memory drift < 1 MiB) |
 | **Verdict** | ✅ **Viable** — every S1 service is stateless except the after-commit queue, which holds request-scoped work and drops it at every request / message boundary and on `kernel.reset` |
 
@@ -30,7 +30,9 @@ resetter between requests.
 | `ResetInterface` / `kernel.reset` | ✅ | `AfterCommitQueue` implements it and is also cleared on `kernel.finish_request` (main request), `kernel.terminate`, `console.terminate`, `WorkerMessageHandledEvent` and `WorkerMessageFailedEvent`; `WorkerRequestLoopTest` covers each path |
 | Cross-owner leakage | ✅ | `WorkerRequestLoopTest`: one kernel, 2,000 requests, two owners and four tokens alternating (valid, wrong checksum, expired, revoked mid-run, missing); each sees only its own principal and the refused ones none |
 | Stale identity (host EntityManager) | ✅ | The default `DoctrineOwnerResolver` re-reads the user with a refresh query on every call and detaches it again when it loaded it, so an account disabled by another process or worker is refused on the next request and the host's identity map does not grow per owner (audit LW-M2); the worker test disables an owner by direct SQL mid-run. DDD resolvers must not answer from a cache or an identity map |
-| Memory growth | ✅ | < 1 MiB drift after warm-up over 2,000 requests |
+| Security token storage (S2) | ✅ | Without the services resetter Symfony keeps the last request's security token in `security.token_storage`, and a stateless firewall never replaces it on a request without an `Authorization` header (nor does a path outside the firewall). `ApiTokenTokenStorageResetListener` removes the bundle's own token (recognised by its `nowo_api_token.principal` attribute) on `kernel.finish_request` and again on `kernel.request`, main requests only, through `security.untracked_token_storage` (no session usage marking). `WorkerRequestLoopTest::testTheFirewallNeverCarriesAUserOrPrincipalIntoTheNextRequest` runs 2,000 firewall requests (valid, wrong secret, no header, outside the firewall, revoked mid-run); removing the listener makes the functional suite fail |
+| Rate limits (S2) | ✅ | Counters in the host's cache pool (`rate_limit.cache_pool`); the `RateLimiterFactory` services hold configuration only and create a limiter per call; no lock, no file handle |
+| Memory growth | ✅ | < 1 MiB drift after warm-up over 2,000 requests (direct and through the firewall) |
 | Static properties / `static` locals | ✅ | None (the bundle's extension instance is the Symfony boot-time cache, `@igor-ignore` with justification) |
 | Superglobals, `putenv`, `ini_set`, `setlocale`, timezone | ✅ | None |
 | Doctrine | ✅ | `DbalApiTokenStore` writes through DBAL in a transaction it opens and closes, never flushes an EntityManager and never keeps a managed entity; the connection is resolved per call and a lost connection is retried once outside a transaction |
@@ -47,6 +49,9 @@ resetter between requests.
 | `DbalApiTokenStore`, `ApiTokenMetadataListener`, `DoctrineOwnerResolver`, `UserCheckerOwnerStatus`, config defaults | `final readonly`, no memo; owner re-read from the database and status checked with the host's user checkers on every call | ✅ |
 | `AfterCommitQueue`, `AfterCommitMiddleware`, `AfterCommitQueueResetListener` | Request-scoped held work, cleared at every boundary | ✅ |
 | `IssueTokenCommand`, `PurgeExpiredTokensCommand` | Console only, no state between runs | ✅ |
+| `ApiTokenFirewallAuthenticator`, `SymfonyApiTokenRateLimiter`, `ClientIpHasher`, `ReachFilterChain` (S2) | `final readonly`; the principal and the rate limit answer go on the request (and the request's security token), never on a service | ✅ (Igor's note on `registerFailedToken()` is `@igor-ignore`: the count goes to the cache pool) |
+| `ApiTokenTokenStorageResetListener` (S2) | Stateless; clears the bundle's security token at main-request boundaries | ✅ |
+| `Compiler\FirewallPass` (S2) | Container build only | ✅ |
 
 ## Rules for the next slices
 

@@ -17,4 +17,7 @@ final class ApiTokenEvents
 
     /** {@see ApiTokenUsedEvent} */
     public const USED = ApiTokenUsedEvent::class;
+
+    /** {@see ApiTokenAuthFailedEvent} */
+    public const AUTH_FAILED = ApiTokenAuthFailedEvent::class;
 }
