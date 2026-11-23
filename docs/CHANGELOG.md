@@ -5,7 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Table of contents
+
+- [[Unreleased]](#unreleased)
+- [[0.4.0] - 2026-11-23](#040---2026-11-23)
+- [[0.3.0] - 2026-11-23](#030---2026-11-23)
+- [[0.2.0] - 2026-11-18](#020---2026-11-18)
+- [[0.1.0] - 2026-11-11](#010---2026-11-11)
+
 ## [Unreleased]
+
+## [0.4.0] - 2026-11-23
 
 ### Added
 
@@ -67,6 +77,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Requires (S3) `nowo-tech/ui-kit-bundle` ^2.69, `nowo-tech/form-kit-bundle` ^2.24, `symfony/form`, `symfony/validator`,
   `symfony/security-csrf`, `symfony/password-hasher`, `symfony/routing`, `symfony/translation-contracts`, `twig/twig`,
   `twig/extra-bundle` and `twig/string-extra` ^3.12 (REQ-TWIG-004).
+
+[0.4.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.4.0
 
 ## [0.3.0] - 2026-11-23
 
@@ -213,5 +225,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `Grants` keeps modules in key order, so a stored grant reads back identically on MySQL (which reorders JSON keys), PostgreSQL and SQLite.
   - Runtime dependencies: `doctrine/dbal` ^4, `doctrine/orm` ^3.3, `symfony/{clock,console,event-dispatcher,security-core,uid}`, `psr/{clock,event-dispatcher,log}`. DoctrineBundle is required at runtime once enabled.
 
-[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.4.0...HEAD
 [0.1.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.1.0
