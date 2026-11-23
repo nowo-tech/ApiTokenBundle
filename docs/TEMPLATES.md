@@ -56,6 +56,10 @@ in an attribute), and if you override the list, keep `secret-once` in `script_na
 {{ include(nowo_ui_partial('scripts', page.bundle), {script_names: nowo_ui_script_names()|merge(['secret-once', 'open-modal'])}, false) }}
 ```
 
+If you open the *New token* dialog from a page of your own (a link with UiKit's remote dialog attributes outside
+the account list), that page must load `secret-once` too, or the dialog prints the secret as plain text without the
+mask, *Copy* and wipe.
+
 **Caching.** The bundle sends `Cache-Control: no-store, private` on the page and on the dialog fragment (no script can
 wipe a response replayed from the HTTP cache). On **Turbo Drive** hosts also print, in the layout of the account pages:
 

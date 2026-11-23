@@ -7,37 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-11-23
-
 ### Added
-
-- S2 firewall + limits (contract 221-A §6.3, §6.5, §6.7), registered with `enabled: true`:
-  - `Infrastructure\Security\ApiTokenFirewallAuthenticator` for the host's **stateless** firewalls
-    (`custom_authenticators`): the `Authorization` header only (`Bearer`, case-insensitive, or bare), a
-    `SelfValidatingPassport` for the token's user (the firewall's user checker runs), the principal and the rate
-    limit answer stamped on the request only after Symfony accepted the passport, and an entry point.
-  - `ApiTokenContext::current($request)` / `ApiTokenContext::rateLimit($request)`; earlier `_nowo_api_token*`
-    request attributes are removed before authenticating.
-  - `firewall.on_failure`: `pass` (default, the request goes on with no user and each API answers its own refusal)
-    or `unauthorized` (`401 {"err": "Invalid token", "ECODE": "TOKEN_000"}` with `WWW-Authenticate: Bearer`, and
-    `429 {"err": "Too many requests", "ECODE": "TOKEN_001"}` with `Retry-After` for a used-up budget). Every failure
-    kind answers identically.
-  - Rate limits in `rate_limit.cache_pool` (`symfony/rate-limiter` fixed windows): `ApiTokenRateLimiterInterface`
-    with `RateLimitState` / `RateLimitScope`; one bucket per token for every module (`per_token`), a write budget
-    (`writes`; unsafe methods with `count_rest_writes: true`) and failed tokens per client IP (`failed_per_ip`,
-    peeked before the presented value is parsed). The IP is keyed by an HMAC with `kernel.secret`.
-  - `ApiTokenAuthFailedEvent` (`failure`, `lookupId` only for tokens that exist, `clientIpHash`, `path`) on every
-    token failure; `ApiTokenEvents::AUTH_FAILED`.
-  - `ReachFilterInterface` (autoconfigured, tag `nowo_api_token.reach_filter`) chained in the authenticator's step 8
-    through `ReachFilterChain`, which intersects every answer with the reach it was given.
-  - Build checks (`FirewallPass`): the cache pool must exist; a firewall that lists the authenticator must be
-    stateless.
-  - Worker mode: `ApiTokenTokenStorageResetListener` empties the token storage at the end of each main request the
-    authenticator signed in or that went through a firewall listing it (Symfony only clears it through the services
-    resetter, so with the kernel kept alive and not reset a request without a token would otherwise run as the
-    previous request's user). Worker tests through the firewall (2,000 + 500 requests).
-  - Firewall functional suite for the standard and the DDD host; host-API integration guide in
-    [USAGE.md](USAGE.md#protecting-your-own-api).
 
 - S3 account + operator pages (contract 221-A §8, §6.10, `REQ-AUTH-013`, `REQ-UI-002`), registered with
   `web_ui.enabled` / `admin_ui.enabled` and loaded by the route import `type: nowo_api_token`:
@@ -70,25 +40,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
-- Audit ZAB-S2-L1 (pre-release, no GHSA): `ApiTokenFirewallAuthenticator::supports()` claimed every `Authorization`
-  header. On a firewall shared with `http_basic` or a JWT authenticator, each foreign credential counted as a failed
-  token for the IP (locking out valid tokens from that IP after 20) and raised `ApiTokenAuthFailedEvent`, and
-  `on_failure: unauthorized` answered `401 TOKEN_000` before the other authenticator ran. It now supports only values
-  with the token prefix (`Bearer <prefix>…` or bare; also `bt_` with `legacy.beacon_v1`). `TokenCodec::prefix()`.
-- Audit ZAB-S2-L2 (pre-release, no GHSA): the worker-mode reset removed a token only while it still carried the
-  bundle's attribute, so a token replaced after creation (an `AuthenticationTokenCreatedEvent` listener such as a 2FA
-  bundle, or a stateless `switch_user`) survived into the next request of the worker. The authenticator now marks the
-  request (`ApiTokenContext::SIGNED_IN`) and the listener empties the storage for a marked request or one that went
-  through a firewall listing the authenticator (`FirewallPass` passes the list).
-- Audit ZAB-S2-L3 (pre-release, no GHSA): the reset read the storage (`getToken()`) on every main request, which ran a
-  pending lazy-firewall initializer and authenticated a host's `lazy: true` firewall after the controller. It no longer
-  reads the storage.
-- Audit ZAB-R-L1 (pre-release, no GHSA): `kernel.finish_request` is not dispatched when
-  `framework.handle_all_throwables: false` rethrows an `\Error`, or when a host `finish_request` listener throws before
-  the reset, so the user could reach the next request of the worker. The listener also empties the storage
-  unconditionally on `kernel.request` (priority 512, main requests only, before any firewall, never reading it).
-- The window between a revocation and requests already past authentication is documented in
-  [CONCURRENCY.md](CONCURRENCY.md#residual-risks) (audit ZAB-S2-I4).
 - Audit ZAB-S3-M1 (pre-release, no GHSA): the operator page's lookup filter was a GET form that accepted a whole
   token, so a pasted secret went into the URL (access and request logs, history) and was echoed into the input. A
   leaked token is now searched with a POST form with CSRF (`OperatorLookupType`, a password input never printed back,
@@ -108,15 +59,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   runtime on every visit so the remote dialog fragment is upgraded too. TEMPLATES.md: overrides and the Turbo
   `turbo-cache-control` meta. `make test-e2e` (Playwright on the rendered pages).
 - Documented: the operator page is not tenant-scoped (SECURITY, USAGE, CONFIGURATION), the *New token* double submit
-  and *Revoke all* versus a concurrent issue (CONCURRENCY), and that 0.4.0 adopts UiKit's *secret once* reveal / copy
-  mode before its tag (contract §6.1 / §8.1, ROADMAP; audit ZAB-S3-L1).
+  and *Revoke all* versus a concurrent issue (CONCURRENCY), and that host pages opening the *New token* dialog must
+  load `secret-once` (TEMPLATES).
+
+### Changed
+
+- Requires (S3) `nowo-tech/ui-kit-bundle` ^2.69, `nowo-tech/form-kit-bundle` ^2.24, `symfony/form`, `symfony/validator`,
+  `symfony/security-csrf`, `symfony/password-hasher`, `symfony/routing`, `symfony/translation-contracts`, `twig/twig`,
+  `twig/extra-bundle` and `twig/string-extra` ^3.12 (REQ-TWIG-004).
+
+## [0.3.0] - 2026-11-23
+
+### Added
+
+- S2 firewall + limits (contract 221-A §6.3, §6.5, §6.7), registered with `enabled: true`:
+  - `Infrastructure\Security\ApiTokenFirewallAuthenticator` for the host's **stateless** firewalls
+    (`custom_authenticators`): the `Authorization` header only (`Bearer`, case-insensitive, or bare), a
+    `SelfValidatingPassport` for the token's user (the firewall's user checker runs), the principal and the rate
+    limit answer stamped on the request only after Symfony accepted the passport, and an entry point.
+  - `ApiTokenContext::current($request)` / `ApiTokenContext::rateLimit($request)`; earlier `_nowo_api_token*`
+    request attributes are removed before authenticating.
+  - `firewall.on_failure`: `pass` (default, the request goes on with no user and each API answers its own refusal)
+    or `unauthorized` (`401 {"err": "Invalid token", "ECODE": "TOKEN_000"}` with `WWW-Authenticate: Bearer`, and
+    `429 {"err": "Too many requests", "ECODE": "TOKEN_001"}` with `Retry-After` for a used-up budget). Every failure
+    kind answers identically.
+  - Rate limits in `rate_limit.cache_pool` (`symfony/rate-limiter` fixed windows): `ApiTokenRateLimiterInterface`
+    with `RateLimitState` / `RateLimitScope`; one bucket per token for every module (`per_token`), a write budget
+    (`writes`; unsafe methods with `count_rest_writes: true`) and failed tokens per client IP (`failed_per_ip`,
+    peeked before the presented value is parsed). The IP is keyed by an HMAC with `kernel.secret`.
+  - `ApiTokenAuthFailedEvent` (`failure`, `lookupId` only for tokens that exist, `clientIpHash`, `path`) on every
+    token failure; `ApiTokenEvents::AUTH_FAILED`.
+  - `ReachFilterInterface` (autoconfigured, tag `nowo_api_token.reach_filter`) chained in the authenticator's step 8
+    through `ReachFilterChain`, which intersects every answer with the reach it was given.
+  - Build checks (`FirewallPass`): the cache pool must exist; a firewall that lists the authenticator must be
+    stateless.
+  - Worker mode: `ApiTokenTokenStorageResetListener` empties the token storage at the end of each main request the
+    authenticator signed in or that went through a firewall listing it (Symfony only clears it through the services
+    resetter, so with the kernel kept alive and not reset a request without a token would otherwise run as the
+    previous request's user). Worker tests through the firewall (2,000 + 500 requests).
+  - Firewall functional suite for the standard and the DDD host; host-API integration guide in
+    [USAGE.md](USAGE.md#protecting-your-own-api).
+
+### Security
+
+- Audit ZAB-S2-L1 (pre-release, no GHSA): `ApiTokenFirewallAuthenticator::supports()` claimed every `Authorization`
+  header. On a firewall shared with `http_basic` or a JWT authenticator, each foreign credential counted as a failed
+  token for the IP (locking out valid tokens from that IP after 20) and raised `ApiTokenAuthFailedEvent`, and
+  `on_failure: unauthorized` answered `401 TOKEN_000` before the other authenticator ran. It now supports only values
+  with the token prefix (`Bearer <prefix>…` or bare; also `bt_` with `legacy.beacon_v1`). `TokenCodec::prefix()`.
+- Audit ZAB-S2-L2 (pre-release, no GHSA): the worker-mode reset removed a token only while it still carried the
+  bundle's attribute, so a token replaced after creation (an `AuthenticationTokenCreatedEvent` listener such as a 2FA
+  bundle, or a stateless `switch_user`) survived into the next request of the worker. The authenticator now marks the
+  request (`ApiTokenContext::SIGNED_IN`) and the listener empties the storage for a marked request or one that went
+  through a firewall listing the authenticator (`FirewallPass` passes the list).
+- Audit ZAB-S2-L3 (pre-release, no GHSA): the reset read the storage (`getToken()`) on every main request, which ran a
+  pending lazy-firewall initializer and authenticated a host's `lazy: true` firewall after the controller. It no longer
+  reads the storage.
+- Audit ZAB-R-L1 (pre-release, no GHSA): `kernel.finish_request` is not dispatched when
+  `framework.handle_all_throwables: false` rethrows an `\Error`, or when a host `finish_request` listener throws before
+  the reset, so the user could reach the next request of the worker. The listener also empties the storage
+  unconditionally on `kernel.request` (priority 512, main requests only, before any firewall, never reading it).
+- The window between a revocation and requests already past authentication is documented in
+  [CONCURRENCY.md](CONCURRENCY.md#residual-risks) (audit ZAB-S2-I4).
 
 ### Changed
 
 - Requires `symfony/security-http`, `symfony/http-foundation` and `symfony/rate-limiter` (^7.4 || ^8.0) at runtime.
-- Requires (S3) `nowo-tech/ui-kit-bundle` ^2.68, `nowo-tech/form-kit-bundle` ^2.24, `symfony/form`, `symfony/validator`,
-  `symfony/security-csrf`, `symfony/password-hasher`, `symfony/routing`, `symfony/translation-contracts`, `twig/twig`,
-  `twig/extra-bundle` and `twig/string-extra` ^3.12 (REQ-TWIG-004).
 - `ApiTokenAuthenticator` takes an optional `ReachFilterChain` (last constructor argument).
 
 - Demo: runs in UiKit's demo platform shell (`nowo-tech/ui-kit-bundle` ^2.60); the demo's own header is gone and the pages use the shell page headers and section cards. Demo only, no bundle change.
