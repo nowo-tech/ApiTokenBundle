@@ -50,3 +50,7 @@ in the page and *Copy* stays hidden (`data-nowo-ui-clipboard-reveal`).
 The contract mentions UiKit's Stimulus `temporary-reveal` with `clearOnHide`. It needs the secret in a value attribute
 (a second copy in the HTML) and Stimulus in the host, so S3 prints the secret once in a plain element instead; the
 dialog cannot be reopened after a reload, and the page sends `Cache-Control: no-store`.
+
+Front-end guidance (owner rule 2026-11-22): checked against Chrome Modern Web Guidance `dialog`, `copy-button`,
+`forms`, `autofill-sign-in-form` and `passkey-reauthentication`: native `<dialog>` from UiKit, the re-auth password
+field with `autocomplete="current-password"`, the copy control hidden until its script runs.
