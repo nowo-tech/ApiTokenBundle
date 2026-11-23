@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\ApiTokenBundle\Tests\Integration\Database;
 
 use Closure;
+use Error;
 use LogicException;
 use Nowo\ApiTokenBundle\Application\Token\TokenCodec;
 use Nowo\ApiTokenBundle\Contract\ApiTokenIssuerInterface;
@@ -22,10 +23,12 @@ use Nowo\ApiTokenBundle\Tests\Fixtures\LimitingReachFilter;
 use Nowo\ApiTokenBundle\Tests\Fixtures\QueryLog;
 use Nowo\ApiTokenBundle\Tests\Fixtures\RecordingListener;
 use Nowo\ApiTokenBundle\Tests\Fixtures\Standard\ActiveUserChecker;
+use Nowo\ApiTokenBundle\Tests\Fixtures\ThrowingFinishRequestListener;
 use Nowo\ApiTokenBundle\Tests\Fixtures\TokenReplacingListener;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\Host;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\KernelTestCase;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\TestKernel;
+use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -33,6 +36,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
+use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Http\Event\AuthenticationTokenCreatedEvent;
 
 use function array_map;
@@ -280,6 +284,60 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
         self::assertSame(1, $foreign->runs);
     }
 
+    /**
+     * Audit ZAB-R-L1: with `framework.handle_all_throwables: false` an `\Error` is rethrown by HttpKernel without
+     * `kernel.finish_request`; the reset before the next request's firewall still leaves it anonymous.
+     */
+    public function testAnErrorThatSkipsFinishRequestDoesNotLeakTheUser(): void
+    {
+        $this->boot(services: static function (ContainerConfigurator $container): void {
+            $container->extension('framework', ['handle_all_throwables' => false]);
+        });
+        $token = $this->issue('alice', 'CI');
+
+        try {
+            $this->call('Bearer ' . $token->secret(), path: '/api/error');
+            self::fail('the \Error is rethrown');
+        } catch (Error $error) {
+            self::assertSame('host bug', $error->getMessage());
+        }
+        $storage = $this->service('security.untracked_token_storage');
+        self::assertInstanceOf(TokenStorageInterface::class, $storage);
+        self::assertSame('alice', $storage->getToken()?->getUserIdentifier(), 'finish_request did not run');
+
+        self::assertNull($this->json($this->call(null))['user'], 'the next request on the API firewall is anonymous');
+        self::assertSame('alice', $this->json($this->call('Bearer ' . $token->secret()))['user']);
+        try {
+            $this->call('Bearer ' . $token->secret(), path: '/api/error');
+        } catch (Error) {
+        }
+        self::assertNull($this->json($this->call(null, path: '/open/whoami'))['user'], 'and outside any firewall');
+    }
+
+    /**
+     * Audit ZAB-R-L1: a host `kernel.finish_request` listener that throws before the bundle's reset.
+     */
+    public function testAThrowingFinishRequestListenerDoesNotLeakTheUser(): void
+    {
+        $this->boot(services: static function (ContainerConfigurator $container): void {
+            $container->services()->set(ThrowingFinishRequestListener::class)->tag('kernel.event_listener', ['event' => 'kernel.finish_request', 'method' => 'onFinishRequest', 'priority' => 0]);
+        });
+        $token = $this->issue('alice', 'CI');
+
+        try {
+            $this->call('Bearer ' . $token->secret(), headers: ['HTTP_X_THROW_FINISH' => '1']);
+            self::fail('the listener throws');
+        } catch (RuntimeException $exception) {
+            self::assertSame('host finish_request listener failed', $exception->getMessage());
+        }
+        $storage = $this->service('security.untracked_token_storage');
+        self::assertInstanceOf(TokenStorageInterface::class, $storage);
+        self::assertSame('alice', $storage->getToken()?->getUserIdentifier(), 'the reset of that request never ran');
+
+        self::assertNull($this->json($this->call(null))['user']);
+        self::assertNull($this->json($this->call(null, path: '/open/whoami'))['user']);
+    }
+
     public function testAStatefulFirewallWithTheAuthenticatorDoesNotBuild(): void
     {
         $host = $this->host();
@@ -341,12 +399,15 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
         return $body . TokenCodec::checksum($body);
     }
 
-    private function call(?string $authorization, string $method = 'GET', string $ip = self::IP, string $path = '/api/whoami'): Response
+    /**
+     * @param array<string, string> $headers more server parameters
+     */
+    private function call(?string $authorization, string $method = 'GET', string $ip = self::IP, string $path = '/api/whoami', array $headers = []): Response
     {
         $http = $this->kernel->getContainer()->get('http_kernel');
         self::assertInstanceOf(HttpKernelInterface::class, $http);
         self::assertInstanceOf(TerminableInterface::class, $http);
-        $server = ['REMOTE_ADDR' => $ip];
+        $server = ['REMOTE_ADDR' => $ip] + $headers;
         if ($authorization !== null) {
             $server['HTTP_AUTHORIZATION'] = $authorization;
         }

@@ -9,6 +9,7 @@ use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenTokenStorageResetListene
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\FinishRequestEvent;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Security\Core\User\InMemoryUser;
@@ -75,6 +76,30 @@ final class TokenStorageResetListenerTest extends TestCase
 
         (new ApiTokenTokenStorageResetListener($storage))->onFinishRequest($this->finish($main, HttpKernelInterface::MAIN_REQUEST));
         self::assertSame($theirs, $storage->getToken());
+    }
+
+    /**
+     * Audit ZAB-R-L1: before any firewall of a main request the storage is emptied unconditionally (a previous
+     * request's finish_request may never have run), without reading it.
+     */
+    public function testEveryMainRequestStartsWithAnEmptyStorageWithoutAnyRead(): void
+    {
+        $storage  = new TokenStorage();
+        $listener = new ApiTokenTokenStorageResetListener($storage);
+        $kernel   = $this->createStub(HttpKernelInterface::class);
+        $left     = new PostAuthenticationToken(new InMemoryUser('bob', null), 'main', []);
+        $storage->setToken($left);
+
+        $listener->onKernelRequest(new RequestEvent($kernel, Request::create('/'), HttpKernelInterface::SUB_REQUEST));
+        self::assertSame($left, $storage->getToken(), 'a sub-request keeps the main request\'s user');
+
+        $ran = false;
+        $storage->setInitializer(static function () use (&$ran): void {
+            $ran = true;
+        });
+        $listener->onKernelRequest(new RequestEvent($kernel, Request::create('/'), HttpKernelInterface::MAIN_REQUEST));
+        self::assertNull($storage->getToken());
+        self::assertFalse($ran, 'a pending initializer is dropped, never run');
     }
 
     private function finish(Request $request, int $type): FinishRequestEvent

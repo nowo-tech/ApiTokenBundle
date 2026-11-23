@@ -9,6 +9,7 @@ use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\ApiTokenBundle\NowoApiTokenBundle;
 use Nowo\ApiTokenBundle\Tests\Fixtures\AuthEchoController;
 use Nowo\ApiTokenBundle\Tests\Fixtures\EchoController;
+use Nowo\ApiTokenBundle\Tests\Fixtures\ThrowingController;
 use Nowo\ApiTokenBundle\Tests\Fixtures\WhoAmIController;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
@@ -143,6 +144,7 @@ final class TestKernel extends Kernel
                 ->arg('$tokenStorage', new ReferenceConfigurator('security.token_storage'))
                 ->public()
                 ->tag('controller.service_arguments');
+            $container->services()->set(ThrowingController::class)->public()->tag('controller.service_arguments');
         }
         if ($this->authRoute) {
             $container->services()
@@ -169,6 +171,7 @@ final class TestKernel extends Kernel
             $routes->add('api_echo', '/api/echo')->controller(EchoController::class)->methods(['GET']);
             $routes->add('main_echo', '/main/echo')->controller(EchoController::class)->methods(['GET']);
             $routes->add('main_whoami', '/main/whoami')->controller(WhoAmIController::class)->methods(['GET']);
+            $routes->add('api_error', '/api/error')->controller(ThrowingController::class)->methods(['GET']);
         }
     }
 }
