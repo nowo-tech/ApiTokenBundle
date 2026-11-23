@@ -3,3 +3,5 @@
 "nowo_api_token.name.too_long": "Verwenden Sie höchstens {{ limit }} Zeichen."
 "nowo_api_token.reach.blank": "Wählen Sie, wo das Token gilt."
 "nowo_api_token.revoke_all.confirm": "Kreuzen Sie das Feld zur Bestätigung an."
+"nowo_api_token.lookup.blank": "Fügen Sie ein Token, eine Kennung oder eine Such-ID ein."
+"nowo_api_token.lookup.invalid": "Das ist kein Token, keine Kennung und keine Such-ID dieser Anwendung."

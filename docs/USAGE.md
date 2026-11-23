@@ -240,9 +240,12 @@ Enable `web_ui` and/or `admin_ui` and import the routes ([INSTALLATION.md](INSTA
 - **Account → Security → API tokens** (`/account/security/api-tokens`): the signed-in person's tokens, *New token*,
   *Revoke* and *Revoke all*. *New token* and *Revoke all* ask for a fresh re-auth (the password by default) once per
   session every `reauth.fresh_seconds`. The secret is shown once, right after the create; a reload shows the list only.
-- **Operator page** (`/admin/api-tokens`): every token, filters by owner key (`user:42`) and by lookup id or visible
-  handle (paste `nwt_k7m2q9x4ab3c` or the whole leaked token; only its lookup id is read), *Revoke*. Refuse a token per
-  case with a listener:
+- **Operator page** (`/admin/api-tokens`): every token with its whole handle (`nwt_k7m2q9x4ab3c`), filters by owner key
+  (`user:42`) and by lookup id or handle, *Find token* for a whole leaked token (a POST form: only its lookup id is
+  read, and the page redirects to the lookup-id filter, so the secret never lands in a URL or a log), *Revoke*. It
+  needs a full sign-in (no remember-me) and refuses requests signed in with an API token. It is **not tenant-scoped**:
+  it lists every token of the application, so a multi-tenant host must restrict it to super-admins with
+  `admin_ui.security.access_checker`, or decide per token with a listener:
 
 ```php
 use Nowo\ApiTokenBundle\Contract\Event\ApiTokenAccessCheckEvent;

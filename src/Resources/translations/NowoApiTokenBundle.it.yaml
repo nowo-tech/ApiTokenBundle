@@ -39,7 +39,10 @@ operator:
     empty_filtered: "Nessun token corrisponde a questi filtri."
     filter: "Filtra"
     filter_owner: "Proprietario (tipo:id)"
-    filter_lookup: "Prefisso del token o id di ricerca"
+    filter_lookup: "Identificativo o id di ricerca"
+    search_token: "Token completo (segnalato come esposto)"
+    search_token_help: "Incollalo qui, mai nella barra degli indirizzi: viene letto solo il suo id di ricerca e l'elenco viene filtrato."
+    search: "Trova token"
     pages: "Pagine"
     next: "Pagina successiva"
 form:
@@ -95,6 +98,7 @@ flash:
     revoked_all: "%count% token revocati."
 error:
     reauth_failed: "Non è stato possibile confermare la tua identità. Riprova."
+    reauth_expired: "La conferma è scaduta. Conferma di nuovo la tua identità."
     reauth_limited: "Troppi tentativi. Riprova tra %seconds% secondi."
     issue_limited: "Hai creato molti token in poco tempo. Riprova più tardi."
     invalid: "Controlla il modulo: un valore non è valido."

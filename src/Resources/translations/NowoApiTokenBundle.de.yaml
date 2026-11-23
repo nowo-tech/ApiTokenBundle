@@ -39,7 +39,10 @@ operator:
     empty_filtered: "Kein Token passt zu diesen Filtern."
     filter: "Filtern"
     filter_owner: "Eigentümer (Typ:ID)"
-    filter_lookup: "Token-Präfix oder Such-ID"
+    filter_lookup: "Kennung oder Such-ID"
+    search_token: "Ganzes Token (als geleakt gemeldet)"
+    search_token_help: "Hier einfügen, nie in die Adressleiste: Nur die Such-ID wird gelesen, dann wird die Liste danach gefiltert."
+    search: "Token finden"
     pages: "Seiten"
     next: "Nächste Seite"
 form:
@@ -95,6 +98,7 @@ flash:
     revoked_all: "%count% Token(s) widerrufen."
 error:
     reauth_failed: "Das hat nicht bestätigt, dass Sie es sind. Versuchen Sie es erneut."
+    reauth_expired: "Ihre Bestätigung ist abgelaufen. Bestätigen Sie erneut, dass Sie es sind."
     reauth_limited: "Zu viele Versuche. Versuchen Sie es in %seconds% Sekunden erneut."
     issue_limited: "Sie haben in kurzer Zeit viele Tokens erstellt. Versuchen Sie es später erneut."
     invalid: "Prüfen Sie das Formular: ein Wert ist ungültig."

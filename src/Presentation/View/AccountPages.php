@@ -120,10 +120,11 @@ final readonly class AccountPages
      * Table rows of these tokens.
      *
      * @param list<ApiTokenView> $tokens
+     * @param bool $fullHandle the whole lookup id in the handle (operator page), else its first characters
      *
      * @return list<TokenRow>
      */
-    public function rows(array $tokens, DateTimeImmutable $now): array
+    public function rows(array $tokens, DateTimeImmutable $now, bool $fullHandle = false): array
     {
         $rows = [];
         foreach ($tokens as $token) {
@@ -142,7 +143,7 @@ final readonly class AccountPages
             }
             $rows[] = new TokenRow(
                 $token,
-                $this->prefix . substr($token->lookupId->value, 0, self::HANDLE_LENGTH) . '…',
+                $fullHandle ? $this->prefix . $token->lookupId->value : $this->prefix . substr($token->lookupId->value, 0, self::HANDLE_LENGTH) . '…',
                 $modules,
                 $token->expiresAt <= $now->modify('+' . self::EXPIRY_WARNING_DAYS . ' days'),
                 $destructive,

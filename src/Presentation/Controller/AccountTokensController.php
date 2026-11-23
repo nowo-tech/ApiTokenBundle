@@ -25,6 +25,7 @@ use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\ReachProviderInterface;
 use Nowo\ApiTokenBundle\Contract\RevocationReason;
 use Nowo\ApiTokenBundle\Contract\TokenId;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenContext;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ReauthSession;
 use Nowo\ApiTokenBundle\Presentation\Form\CsrfActionType;
 use Nowo\ApiTokenBundle\Presentation\Form\NewTokenType;
@@ -114,9 +115,9 @@ final readonly class AccountTokensController
      * The person's tokens.
      */
     #[Route('/', name: 'nowo_api_token_account', methods: ['GET'])]
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        [, $owner] = $this->person();
+        [, $owner] = $this->person($request);
 
         return $this->listPage($owner, null);
     }
@@ -127,7 +128,7 @@ final readonly class AccountTokensController
     #[Route('/new', name: 'nowo_api_token_account_new', methods: ['GET', 'POST'])]
     public function create(Request $request): Response
     {
-        [$user, $owner] = $this->person();
+        [$user, $owner] = $this->person($request);
         $form           = $this->newForm($request, $user, $owner);
         $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid() && $this->passReauth($request, $user, $form)) {
@@ -153,7 +154,7 @@ final readonly class AccountTokensController
     #[Route('/{id}/revoke', name: 'nowo_api_token_account_revoke', requirements: ['id' => self::ID], methods: ['POST'])]
     public function revoke(Request $request, string $id): RedirectResponse
     {
-        [, $owner] = $this->person();
+        [, $owner] = $this->person($request);
         $this->assertCsrf($request);
         if (!$this->revoker->revoke($owner, new TokenId($id), RevocationReason::Owner)) {
             throw new NotFoundHttpException('API token not found.');
@@ -169,7 +170,7 @@ final readonly class AccountTokensController
     #[Route('/revoke-all', name: 'nowo_api_token_account_revoke_all', methods: ['GET', 'POST'])]
     public function revokeAll(Request $request): Response
     {
-        [$user, $owner] = $this->person();
+        [$user, $owner] = $this->person($request);
         $form           = $this->forms->create(RevokeAllType::class, null, $this->reauthOptions($request, $user));
         $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid() && $this->passReauth($request, $user, $form)) {
@@ -191,13 +192,18 @@ final readonly class AccountTokensController
     public const ID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
     /**
-     * The signed-in person and their owner reference. Remembered-me sessions are refused (contract §6.11).
+     * The signed-in person and their owner reference. Remembered-me sessions are refused (contract §6.11), and so are
+     * requests signed in with an API token: a token never manages tokens (audit ZAB-S3-L2).
      *
      * @return array{object, OwnerRef}
      */
-    private function person(): array
+    private function person(Request $request): array
     {
-        $user = $this->tokenStorage->getToken()?->getUser();
+        $token = $this->tokenStorage->getToken();
+        if (ApiTokenContext::signedInWithToken($token, $request)) {
+            throw new AccessDeniedException('API tokens cannot manage API tokens.');
+        }
+        $user = $token?->getUser();
         if (!$user instanceof UserInterface || !$this->authorization->isGranted('IS_AUTHENTICATED_FULLY')) {
             throw new AccessDeniedException('Sign in again to manage your API tokens.');
         }
@@ -262,7 +268,13 @@ final readonly class AccountTokensController
         if ($this->reauth->isFresh($request, $user)) {
             return true;
         }
-        // Not fresh: the form of this request was built with the step (one of the two fields).
+        // Not fresh. The form of this request was built with the step, unless the mark expired since it was built: ask
+        // again (the next request builds the form with the step), never fail on the missing field (audit ZAB-S3-I5).
+        if (!$form->has('reauth') && !$form->has('reauth_password')) {
+            $form->addError(new FormError($this->translator->trans('error.reauth_expired', [], self::DOMAIN)));
+
+            return false;
+        }
         $field            = $form->has('reauth') ? 'reauth' : 'reauth_password';
         $value            = $form->get($field)->getData();
         $data             = $field === 'reauth' ? (is_array($value) ? $value : []) : ['password' => $value];

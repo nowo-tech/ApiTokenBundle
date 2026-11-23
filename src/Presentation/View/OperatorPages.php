@@ -17,8 +17,8 @@ use Symfony\Component\Form\FormView;
 use function assert;
 
 /**
- * Builds the operator page (contract §8.2): every token (owner, name, handle, modules, dates), keyset pages, filters
- * by owner key and lookup id, *Revoke*. No *issue on behalf* in v1.
+ * Builds the operator page (contract §8.2): every token (owner, name, full handle `<prefix><lookup id>`, modules,
+ * dates), keyset pages, filters by owner key and lookup id, *Revoke*. No *issue on behalf* in v1.
  */
 final readonly class OperatorPages
 {
@@ -39,7 +39,8 @@ final readonly class OperatorPages
         return new ListPage(
             new PageHeader($this->account->label('operator.title'), $this->account->label('operator.intro')),
             $this->account->columns(true),
-            $this->account->rows($tokens, $now),
+            // The whole lookup id (public, stored in clear): operators match a reported token by eye, no paste needed.
+            $this->account->rows($tokens, $now, true),
             $filters,
             function (mixed $row) use ($revokeForm): array {
                 assert($row instanceof TokenRow);

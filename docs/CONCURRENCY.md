@@ -133,5 +133,11 @@ nowo_api_token:
   longer than that request: every request that starts after the commit is refused. Long-running work started from such
   a request (a queued message, a stream) must re-check what it needs itself. The per-token budget is per token, so an
   owner can spend up to `max_per_owner` × the per-token budget; this is the contract's design (audit ZAB-S2-I4).
+- **Double submit of *New token*.** The CSRF token of the form is renewed after an issue, so a reload cannot issue
+  again; two submits sent at the same moment with the same CSRF token can still both pass and create two tokens. Both
+  secrets go to the same person, both count against `issue_per_owner` and `max_per_owner`, and the person can revoke
+  the extra one. Accepted (audit ZAB-S3-I4).
+- ***Revoke all* versus a concurrent issue.** `revokeAll()` does not take the owner lock, so a token issued while it
+  runs can survive it. The person sees it in the list afterwards and can revoke it. Accepted (audit ZAB-S3-I4).
 - **Owner lock rows are never deleted.** One small row per owner that ever issued a token; deleting it on the last
   revocation would race with a concurrent issue.

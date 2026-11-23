@@ -39,7 +39,10 @@ operator:
     empty_filtered: "Geen token komt overeen met deze filters."
     filter: "Filteren"
     filter_owner: "Eigenaar (type:id)"
-    filter_lookup: "Tokenprefix of zoek-id"
+    filter_lookup: "Kenmerk of zoek-id"
+    search_token: "Volledig token (gemeld als gelekt)"
+    search_token_help: "Plak het hier, nooit in de adresbalk: alleen de zoek-id wordt gelezen, daarna wordt de lijst erop gefilterd."
+    search: "Token zoeken"
     pages: "Pagina's"
     next: "Volgende pagina"
 form:
@@ -95,6 +98,7 @@ flash:
     revoked_all: "%count% token(s) ingetrokken."
 error:
     reauth_failed: "Dat bevestigde niet dat u het bent. Probeer het opnieuw."
+    reauth_expired: "Uw bevestiging is verlopen. Bevestig opnieuw dat u het bent."
     reauth_limited: "Te veel pogingen. Probeer het over %seconds% seconden opnieuw."
     issue_limited: "U hebt in korte tijd veel tokens gemaakt. Probeer het later opnieuw."
     invalid: "Controleer het formulier: een waarde is ongeldig."

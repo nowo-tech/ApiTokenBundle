@@ -18,7 +18,7 @@ UiKit's page scaffolds (REQ-UI-003). They ship no CSS and no JavaScript of their
 | `@NowoApiTokenBundle/account/list.html.twig` | `@NowoUiKit/page/list.html.twig` | `page` (UiKit `ListPage`, rows `Presentation\View\TokenRow`), `issued` (`IssuedToken`, only in the POST answer that created it), `secret`, `created_template`, `list_href` | `nowo_ui_list_row` (cells), `nowo_ui_list_after` (the one-time secret dialog, opened on load), `nowo_ui_scripts` (adds UiKit's `clipboard` and `open-modal` runtimes) |
 | `@NowoApiTokenBundle/account/new.html.twig` | `@NowoUiKit/page/form.html.twig` | `page` (UiKit `FormPage`) | `nowo_ui_form_body` (form-level errors above the fields) |
 | `@NowoApiTokenBundle/account/revoke_all.html.twig` | `@NowoUiKit/page/form.html.twig` | `page` (UiKit `FormPage`) | `nowo_ui_form_body` |
-| `@NowoApiTokenBundle/operator/list.html.twig` | `@NowoUiKit/page/list.html.twig` | `page` (UiKit `ListPage`), `next_href` (keyset page) | `nowo_ui_list_row`, `nowo_ui_list_after` (pager) |
+| `@NowoApiTokenBundle/operator/list.html.twig` | `@NowoUiKit/page/list.html.twig` | `page` (UiKit `ListPage`), `search` (`FormView` of the POST leaked-token search; its password field is never printed back), `next_href` (keyset page) | `nowo_ui_list_filters` (adds the search after the GET filters), `nowo_ui_list_row`, `nowo_ui_list_after` (pager) |
 
 The page contract test (`tests/Integration/PageContractTest.php`, UiKit `PageContractTestCase`) renders every page with
 fixtures: no raw translation keys, no framework utility classes outside theme slots, action forms with their CSRF
@@ -28,7 +28,7 @@ fields.
 
 | Template | Used by | Notes |
 | --- | --- | --- |
-| `@NowoApiTokenBundle/_row.html.twig` | both lists | Cells of one token: (owner), name, *agents may delete* badge, handle `nwt_k7m2…`, module levels, reach (*everything* or a count, never the entries), created, last used, expires (warning within 7 days) |
+| `@NowoApiTokenBundle/_row.html.twig` | both lists | Cells of one token: (owner), name, *agents may delete* badge, handle `nwt_k7m2…` (the whole `nwt_k7m2q9x4ab3c` on the operator page), module levels, reach (*everything* or a count, never the entries), created, last used, expires (warning within 7 days) |
 | `@NowoApiTokenBundle/account/_created.html.twig` | account list, dialog answer | The secret, printed **once** (the copy button reads it from the element with `data-nowo-ui-clipboard-target`), the "only time you will see it" notice and a `curl` example with a `$TOKEN` placeholder |
 | `@NowoApiTokenBundle/account/_new_fragment.html.twig` | UiKit remote form dialog | The *New token* form for an `X-Nowo-Dialog: 1` request |
 | `@NowoApiTokenBundle/account/_revoke_all_fragment.html.twig` | UiKit remote form dialog | The *Revoke all* form for a dialog request |

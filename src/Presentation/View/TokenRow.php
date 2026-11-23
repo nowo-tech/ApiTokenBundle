@@ -13,7 +13,8 @@ use Nowo\ApiTokenBundle\Contract\ApiTokenView;
 final readonly class TokenRow
 {
     /**
-     * @param string $handle the public handle (`<prefix><first 4 of the lookup id>…`)
+     * @param string $handle the public handle (`<prefix><first 4 of the lookup id>…`; the whole lookup id on the
+     *                       operator page)
      * @param list<array{module: string, level: string, flags: list<string>}> $modules granted modules, in registry order
      * @param bool $expiresSoon expires within {@see AccountPages::EXPIRY_WARNING_DAYS} days
      * @param bool $destructive a module flag `destructive` is ticked (*agents may delete*)

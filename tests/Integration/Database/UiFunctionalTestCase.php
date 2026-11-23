@@ -16,6 +16,9 @@ use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\RevocationReason;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator;
 use Nowo\ApiTokenBundle\Tests\Fixtures\Ddd\MemberReauthGate;
+use Nowo\ApiTokenBundle\Tests\Fixtures\ExpireReauthOnSubmit;
+use Nowo\ApiTokenBundle\Tests\Fixtures\MemoryLogger;
+use Nowo\ApiTokenBundle\Tests\Fixtures\MemoryLoggerPass;
 use Nowo\ApiTokenBundle\Tests\Fixtures\PlacesReachProvider;
 use Nowo\ApiTokenBundle\Tests\Fixtures\RecordingListener;
 use Nowo\ApiTokenBundle\Tests\Fixtures\ShortPolicy;
@@ -41,6 +44,7 @@ use function array_map;
 use function array_replace_recursive;
 use function json_encode;
 use function serialize;
+use function substr;
 use function substr_count;
 
 /**
@@ -231,6 +235,121 @@ abstract class UiFunctionalTestCase extends KernelTestCase
         self::assertCount(1, $this->query()->ofOwner($this->host()->owner('bob')));
     }
 
+    /**
+     * Audit ZAB-S3-M1: a leaked token is searched by POST + CSRF; only its lookup id reaches the redirect, and the
+     * secret appears in no URL, Location header, log record or HTML. A whole token in the GET filter matches nothing and
+     * is not printed back.
+     */
+    public function testTheLeakedTokenSearchNeverPutsTheSecretInAUrlALogOrThePage(): void
+    {
+        $client = $this->boot([], [new MemoryLoggerPass()]);
+        $alice  = $this->issue('alice', 'leaked');
+        $this->issue('bob', 'other');
+        $secret = $alice->secret();
+        $lookup = $alice->token->lookupId->value;
+        $logger = $this->kernel->getContainer()->get('logger');
+        self::assertInstanceOf(MemoryLogger::class, $logger);
+        $urls = [];
+
+        $crawler = $this->as($client, 'admin', 'GET', self::ADMIN);
+        self::assertSame(200, $client->getResponse()->getStatusCode(), (string) $client->getResponse()->getContent());
+        self::assertContains('nwt_' . $lookup, $crawler->filter('[data-testid="api-token-handle"]')->each(static fn (Crawler $node): string => $node->text()), 'the whole lookup id is shown');
+        $form = $crawler->filter('form[name="nowo_api_token_lookup"]')->form();
+        self::assertSame('POST', $form->getMethod());
+        self::assertSame('password', $crawler->filter('input[name="nowo_api_token_lookup[token]"]')->attr('type'));
+        $form['nowo_api_token_lookup[token]'] = $secret;
+        $urls[]                               = $form->getUri();
+        $this->as($client, 'admin', 'POST', self::ADMIN . '/lookup', $form->getPhpValues());
+        $response = $client->getResponse();
+        self::assertSame(303, $response->getStatusCode(), (string) $response->getContent());
+        $location = (string) $response->headers->get('Location');
+        self::assertSame(self::ADMIN . '?lookup=' . $lookup, $location);
+        $urls[] = $location;
+
+        $crawler = $this->as($client, 'admin', 'GET', $location);
+        $body    = (string) $client->getResponse()->getContent();
+        self::assertCount(1, $crawler->filter('[data-testid="api-token-handle"]'));
+        self::assertSame($lookup, $crawler->filter('input[name="lookup"]')->attr('value'));
+        $urls[] = (string) $client->getRequest()->getUri();
+        $crawler->filter('a[href], form[action]')->each(static function (Crawler $node) use (&$urls): void {
+            $urls[] = (string) ($node->attr('href') ?? $node->attr('action'));
+        });
+
+        // Refusals answer the list again with the error, never the value.
+        $form                                 = $crawler->filter('form[name="nowo_api_token_lookup"]')->form();
+        $form['nowo_api_token_lookup[token]'] = 'zz_' . $secret;
+        $this->as($client, 'admin', 'POST', self::ADMIN . '/lookup', $form->getPhpValues());
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        $refused = (string) $client->getResponse()->getContent();
+        self::assertStringContainsString('not a token, a handle or a lookup id', $refused);
+        $values                                    = $form->getPhpValues();
+        $values['nowo_api_token_lookup']['token']  = $secret;
+        $values['nowo_api_token_lookup']['_token'] = 'forged';
+        $this->as($client, 'admin', 'POST', self::ADMIN . '/lookup', $values);
+        self::assertSame(422, $client->getResponse()->getStatusCode(), 'a forged CSRF token is refused');
+        $forged = (string) $client->getResponse()->getContent();
+        $this->as($client, 'bob', 'POST', self::ADMIN . '/lookup', $form->getPhpValues());
+        self::assertSame(403, $client->getResponse()->getStatusCode(), 'operators only');
+
+        foreach ([...$urls, $body, $refused, $forged] as $haystack) {
+            self::assertStringNotContainsString(substr($secret, 17, 20), $haystack);
+        }
+        self::assertNotSame([], $logger->records);
+        self::assertStringNotContainsString(substr($secret, 17, 20), (string) json_encode($logger->records), 'never in a log record');
+
+        // A whole token typed into the GET filter (or a crafted link): no match, not printed back.
+        $crawler = $this->as($client, 'admin', 'GET', self::ADMIN . '?lookup=' . $secret);
+        self::assertCount(0, $crawler->filter('[data-testid="api-token-handle"]'));
+        self::assertSame('', (string) $crawler->filter('input[name="lookup"]')->attr('value'));
+        self::assertStringNotContainsString(substr($secret, 17, 20), (string) $client->getResponse()->getContent());
+        $crawler = $this->as($client, 'admin', 'GET', self::ADMIN . '?lookup=' . $lookup . '_x');
+        self::assertCount(0, $crawler->filter('[data-testid="api-token-handle"]'), 'only a lookup id or a handle');
+        $crawler = $this->as($client, 'admin', 'GET', self::ADMIN . '?lookup=' . $lookup);
+        self::assertCount(1, $crawler->filter('[data-testid="api-token-handle"]'));
+    }
+
+    /**
+     * Audit ZAB-S3-L2: when the host's token firewall also covers the pages, a request signed in with an API token can
+     * open neither the account pages nor the operator page.
+     */
+    public function testAnApiTokenCannotOpenTheAccountOrOperatorPages(): void
+    {
+        $client = $this->boot([], [], true);
+        $alice  = $this->issue('alice', 'narrow');
+        $admin  = $this->issue('admin', 'admin');
+
+        foreach ([[$alice, 'GET', self::ACCOUNT], [$alice, 'GET', self::ACCOUNT . '/new'], [$alice, 'POST', self::ACCOUNT . '/new'], [$alice, 'POST', self::ACCOUNT . '/revoke-all'], [$admin, 'GET', self::ADMIN], [$admin, 'POST', self::ADMIN . '/lookup']] as [$token, $method, $path]) {
+            $client->request($method, $path, [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . $token->secret()]);
+            self::assertSame(403, $client->getResponse()->getStatusCode(), $method . ' ' . $path);
+        }
+        $this->as($client, 'admin', 'GET', self::ADMIN);
+        self::assertSame(200, $client->getResponse()->getStatusCode(), 'a person still opens it');
+        self::assertCount(1, $this->query()->ofOwner($this->host()->owner('alice')), 'nothing revoked');
+        self::assertCount(1, $this->query()->ofOwner($this->host()->owner('admin')));
+    }
+
+    /**
+     * Audit ZAB-S3-I5: a re-auth mark that expires while the form is being checked asks again (422), never a 500.
+     */
+    public function testAMarkThatExpiresDuringTheSubmitAsksAgain(): void
+    {
+        $client  = $this->boot();
+        $crawler = $this->as($client, 'alice', 'GET', self::ACCOUNT . '/new');
+        $this->submitNew($client, $crawler, 'first', $this->goodReauth());
+        $crawler = $this->as($client, 'alice', 'GET', self::ACCOUNT . '/new');
+        self::assertCount(0, $crawler->filter('input[name="' . $this->reauthField('nowo_api_token') . '"]'), 'fresh: no step');
+        $probe = $this->service(ExpireReauthOnSubmit::class);
+        self::assertInstanceOf(ExpireReauthOnSubmit::class, $probe);
+        $probe->armed = true;
+
+        $this->submitNew($client, $crawler, 'second', '');
+        self::assertSame(422, $client->getResponse()->getStatusCode(), (string) $client->getResponse()->getContent());
+        self::assertStringContainsString('Your confirmation expired', (string) $client->getResponse()->getContent());
+        self::assertCount(1, $this->query()->ofOwner($this->host()->owner('alice')));
+        $crawler = $this->as($client, 'alice', 'GET', self::ACCOUNT . '/new');
+        self::assertCount(1, $crawler->filter('input[name="' . $this->reauthField('nowo_api_token') . '"]'), 'the step is asked again');
+    }
+
     public function testDialogRequestsGetFragmentsAndTheSecretInTheDialog(): void
     {
         $client  = $this->boot();
@@ -340,13 +459,15 @@ abstract class UiFunctionalTestCase extends KernelTestCase
     /**
      * @param array<string, mixed> $config
      * @param list<CompilerPassInterface> $passes
+     * @param bool $tokenOnPages the pages firewall also lists the API-token authenticator
      */
-    protected function boot(array $config = [], array $passes = []): KernelBrowser
+    protected function boot(array $config = [], array $passes = [], bool $tokenOnPages = false): KernelBrowser
     {
         $host     = $this->host();
         $kind     = $host->kind;
         $type     = $kind === Host::STANDARD ? 'user' : 'member';
-        $security = ['extra_firewalls' => ['pages' => ['pattern' => '^/(account|admin)', 'stateless' => true, 'provider' => $kind === Host::STANDARD ? 'users' : 'none', 'custom_authenticators' => [TestUserAuthenticator::class]]]];
+        $pages    = $tokenOnPages ? [TestUserAuthenticator::class, ApiTokenFirewallAuthenticator::class] : [TestUserAuthenticator::class];
+        $security = ['extra_firewalls' => ['pages' => ['pattern' => '^/(account|admin)', 'stateless' => true, 'provider' => $kind === Host::STANDARD ? 'users' : 'none', 'custom_authenticators' => $pages]]];
         if ($kind === Host::STANDARD) {
             $security['password_hashers'] = [User::class => 'plaintext'];
         }
@@ -357,6 +478,7 @@ abstract class UiFunctionalTestCase extends KernelTestCase
             $container->services()->set(MemberReauthGate::class);
             $container->services()->set(PlacesReachProvider::class);
             $container->services()->set(ShortPolicy::class);
+            $container->services()->set(ExpireReauthOnSubmit::class)->args([new ReferenceConfigurator('clock')])->tag('form.type_extension')->public();
         };
         $extra = array_replace_recursive(['web_ui' => ['enabled' => true], 'admin_ui' => ['enabled' => true], 'reach' => ['provider' => PlacesReachProvider::class]], $config);
         if ($kind === Host::DDD) {

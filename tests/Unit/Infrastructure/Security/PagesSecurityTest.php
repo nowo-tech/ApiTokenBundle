@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\ApiTokenBundle\Tests\Unit\Infrastructure\Security;
 
 use DateTimeImmutable;
+use Nowo\ApiTokenBundle\Contract\ApiTokenAccessCheckerInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenView;
 use Nowo\ApiTokenBundle\Contract\Event\ApiTokenAccessCheckEvent;
 use Nowo\ApiTokenBundle\Contract\Grants;
@@ -15,6 +16,9 @@ use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\ReauthGateInterface;
 use Nowo\ApiTokenBundle\Contract\TokenId;
 use Nowo\ApiTokenBundle\Infrastructure\RateLimit\SymfonyApiTokenRateLimiter;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenAdminGuard;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenContext;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ClientIpHasher;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ConfigurableApiTokenAccessChecker;
 use Nowo\ApiTokenBundle\Infrastructure\Security\PasswordReauthGate;
@@ -24,14 +28,19 @@ use Nowo\ApiTokenBundle\Tests\Fixtures\FakeRateLimiter;
 use PHPUnit\Framework\TestCase;
 use stdClass;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\CacheStorage;
+use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\User\InMemoryUser;
+use Symfony\Component\Security\Http\Authenticator\Token\PostAuthenticationToken;
 
 use function array_keys;
 use function str_repeat;
@@ -48,6 +57,45 @@ final class PagesSecurityTest extends TestCase
         $authorization->expects(self::never())->method('isGranted');
 
         self::assertTrue((new ConfigurableApiTokenAccessChecker($authorization, []))->canAccess(new stdClass()));
+    }
+
+    /**
+     * Audit ZAB-S3-L2 / I1: the operator page refuses API-token sessions (by the token's attribute or the request mark)
+     * and remembered sessions; a full sign-in passes.
+     */
+    public function testTheOperatorGuardRefusesApiTokensAndRememberedSessions(): void
+    {
+        $allow = new class implements ApiTokenAccessCheckerInterface {
+            public function canAccess(object $user): bool
+            {
+                return true;
+            }
+        };
+        $dispatcher = new EventDispatcher();
+        $storage    = new TokenStorage();
+        $full       = $this->createStub(AuthorizationCheckerInterface::class);
+        $full->method('isGranted')->willReturn(true);
+        $remembered = $this->createStub(AuthorizationCheckerInterface::class);
+        $remembered->method('isGranted')->willReturn(false);
+        $requests = new RequestStack();
+        $request  = Request::create('/admin');
+        $requests->push($request);
+        $user = new InMemoryUser('admin', null, ['ROLE_ADMIN']);
+
+        $storage->setToken(new PostAuthenticationToken($user, 'pages', $user->getRoles()));
+        self::assertSame($user, (new ApiTokenAdminGuard($allow, $dispatcher, $storage, false, $full, $requests))->operator());
+        self::assertSame($user, (new ApiTokenAdminGuard($allow, $dispatcher, $storage))->operator(), 'no checker, no request stack');
+        $this->assertRefused(new ApiTokenAdminGuard($allow, $dispatcher, $storage, false, $remembered, $requests), 'Sign in again');
+
+        ApiTokenContext::markSignedIn($request);
+        $this->assertRefused(new ApiTokenAdminGuard($allow, $dispatcher, $storage, true, $full, $requests), 'API tokens cannot');
+
+        $api = new PostAuthenticationToken($user, 'api', $user->getRoles());
+        $api->setAttribute(ApiTokenFirewallAuthenticator::TOKEN_PRINCIPAL, 'x');
+        $storage->setToken($api);
+        $this->assertRefused(new ApiTokenAdminGuard($allow, $dispatcher, $storage, false, $full), 'API tokens cannot');
+        self::assertFalse(ApiTokenContext::signedInWithToken(null, null));
+        self::assertFalse(ApiTokenContext::signedInWithToken(new PostAuthenticationToken($user, 'pages', []), Request::create('/')));
     }
 
     public function testTheAccessEventDenyWinsOverAGrant(): void
@@ -120,9 +168,19 @@ final class PagesSecurityTest extends TestCase
         self::assertTrue($loader->supports('.', ApiTokenRouteLoader::TYPE));
         self::assertFalse($loader->supports('.', 'other'));
         $routes = $loader->load('.');
-        self::assertSame(['nowo_api_token_operator', 'nowo_api_token_operator_revoke'], array_keys($routes->all()));
+        self::assertSame(['nowo_api_token_operator', 'nowo_api_token_operator_lookup', 'nowo_api_token_operator_revoke'], array_keys($routes->all()));
         self::assertSame('/ops/tokens', $routes->get('nowo_api_token_operator')?->getPath());
         self::assertCount(0, (new ApiTokenRouteLoader(['enabled' => false, 'path_prefix' => '/a'], ['enabled' => false, 'path_prefix' => '/b']))->load('.'));
+    }
+
+    private function assertRefused(ApiTokenAdminGuard $guard, string $message): void
+    {
+        try {
+            $guard->operator();
+            self::fail('refused expected');
+        } catch (AccessDeniedException $exception) {
+            self::assertStringContainsString($message, $exception->getMessage());
+        }
     }
 
     private function view(): ApiTokenView

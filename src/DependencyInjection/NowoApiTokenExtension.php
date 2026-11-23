@@ -58,6 +58,7 @@ use Nowo\ApiTokenBundle\Presentation\Controller\OperatorTokensController;
 use Nowo\ApiTokenBundle\Presentation\Form\CsrfActionType;
 use Nowo\ApiTokenBundle\Presentation\Form\NewTokenType;
 use Nowo\ApiTokenBundle\Presentation\Form\OperatorFilterType;
+use Nowo\ApiTokenBundle\Presentation\Form\OperatorLookupType;
 use Nowo\ApiTokenBundle\Presentation\Form\RevokeAllType;
 use Nowo\ApiTokenBundle\Presentation\Http\FramingHeadersListener;
 use Nowo\ApiTokenBundle\Presentation\Routing\ApiTokenRouteLoader;
@@ -360,7 +361,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         }
         $container->register(FramingHeadersListener::class, FramingHeadersListener::class)
             ->addTag('kernel.event_listener', ['event' => 'kernel.response', 'method' => 'onKernelResponse', 'priority' => FramingHeadersListener::PRIORITY]);
-        foreach ([CsrfActionType::class, NewTokenType::class, RevokeAllType::class, OperatorFilterType::class] as $type) {
+        foreach ([CsrfActionType::class, NewTokenType::class, RevokeAllType::class, OperatorFilterType::class, OperatorLookupType::class] as $type) {
             $container->register($type, $type)->addTag('form.type');
         }
         $common = [
@@ -396,6 +397,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
             $this->service($container, ApiTokenAccessCheckerInterface::class, $security['access_checker'], $default);
             $container->register(ApiTokenAdminGuard::class, ApiTokenAdminGuard::class)->setArguments([
                 new Reference(ApiTokenAccessCheckerInterface::class), $dispatcher, new Reference('security.token_storage', ContainerInterface::NULL_ON_INVALID_REFERENCE), $security['allow_unauthenticated'],
+                new Reference('security.authorization_checker', ContainerInterface::NULL_ON_INVALID_REFERENCE), new Reference('request_stack', ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ]);
             $container->register(OperatorTokensController::class, OperatorTokensController::class)
                 ->setPublic(true)

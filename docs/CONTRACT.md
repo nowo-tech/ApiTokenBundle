@@ -397,6 +397,10 @@ bt_     k7m2q9x4ab3c _ 43 chars base64url (32 random bytes)   + 6 chars base62 C
   - The page sends `Cache-Control: no-store` (and `private`).
   - The dialog uses UiKit `temporary-reveal` with `clearOnHide` and `clipboard-copy`, so the plaintext leaves the DOM
     when the person closes it (`REQ-ENCRYPT-002` UX).
+  - *Implementation note (S3, owner decision 2026-11-23, audit ZAB-S3-L1):* 0.4.0 PR #13 prints the secret once in a
+    plain `<code>` element (no second copy in a `value` attribute). Before the 0.4.0 tag it adopts UiKit's new
+    *secret once* reveal / copy mode (built in a UiKit PR), which keeps the secret as a single DOM node and wipes it
+    when the dialog closes and on `pagehide`; the bundle ships no script of its own for this.
   - A reload shows the list only. A lost secret means a new token.
 
 ### 6.2 Verification (constant time, order fixed)
@@ -669,15 +673,30 @@ The page uses a UiKit `ListPage` scaffold with a settings intro. Its contents:
 - **After create:** the response re-renders the page with `_open_modal_on_load` showing the secret once. The dialog
   uses `temporary-reveal` (clearOnHide), `clipboard-copy`, the text "This is the only time you will see it", and
   example `curl` lines with a `$TOKEN` placeholder (never the secret pasted into the example).
+  - *Implementation note (S3, owner decision 2026-11-23, audit ZAB-S3-L1):* 0.4.0 PR #13 prints the secret once in
+    a plain `<code>` element. Before the 0.4.0 tag the dialog adopts UiKit's *secret once* reveal / copy mode instead
+    of `temporary-reveal`: the secret stays a single DOM node and is wiped when the dialog closes and on `pagehide`
+    (see §6.1).
 - The empty state explains what a token is.
 - Every template can be overridden (`web_ui.templates.*`, REQ-TWIG-001). `docs/TEMPLATES.md` documents them. A
   `PageContractTestCase` subclass tests the page.
 
 ### 8.2 Operator page
 
-`admin_ui.path_prefix`: keyset-paginated table (owner, name, lookup id, modules, created, expires, last used), a
-filter by owner key and by lookup id (an operator can find a token reported as leaked from its visible prefix), and
-*Revoke*. There is no *issue on behalf* in v1.
+`admin_ui.path_prefix`: keyset-paginated table (owner, name, the whole handle `<prefix><lookup id>`, modules,
+created, expires, last used), a GET filter by owner key and by lookup id or handle, and *Revoke*. There is no *issue on
+behalf* in v1.
+
+- **Leaked token search** (audit ZAB-S3-M1): a whole token is never accepted in a URL. The operator pastes it into a
+  POST form with CSRF (a password input that is never printed back); the server reads only its lookup id and redirects
+  to `?lookup=<lookup id>`. The GET filter refuses any value longer than a handle: it matches nothing and is not
+  echoed. The table shows the whole lookup id, so operators match a reported token without pasting it.
+- **Access:** a full sign-in (`IS_AUTHENTICATED_FULLY`, no remember-me), never a request signed in with an API token
+  (the account pages refuse those too, audit ZAB-S3-L2), then `access_roles` / `access_checker` and the per-token
+  `ApiTokenAccessCheckEvent`.
+- **Not tenant-scoped:** the page lists every token of the application. A multi-tenant host (Beacon) restricts it to
+  super-admins through `admin_ui.security.access_checker`, or narrows actions with an `ApiTokenAccessCheckEvent`
+  listener.
 
 ### 8.3 Translations
 

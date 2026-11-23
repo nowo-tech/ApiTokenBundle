@@ -39,7 +39,10 @@ operator:
     empty_filtered: "No token matches these filters."
     filter: "Filter"
     filter_owner: "Owner (type:id)"
-    filter_lookup: "Token prefix or lookup id"
+    filter_lookup: "Handle or lookup id"
+    search_token: "Whole token (reported as leaked)"
+    search_token_help: "Paste it here, never in the address bar: only its lookup id is read, then the list is filtered by it."
+    search: "Find token"
     pages: "Pages"
     next: "Next page"
 form:
@@ -95,6 +98,7 @@ flash:
     revoked_all: "%count% token(s) revoked."
 error:
     reauth_failed: "That did not confirm it is you. Try again."
+    reauth_expired: "Your confirmation expired. Confirm it is you again."
     reauth_limited: "Too many attempts. Try again in %seconds% seconds."
     issue_limited: "You created many tokens in a short time. Try again later."
     invalid: "Check the form: a value is not valid."

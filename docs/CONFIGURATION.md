@@ -121,7 +121,8 @@ workers. The IP is keyed by an HMAC with `kernel.secret`, never stored in clear.
 | `expiry.choices`, `expiry.default_days` | The expiry select (values above the policy's maximum are hidden) |
 
 Per-token decisions of the operator page: listen to `ApiTokenAccessCheckEvent` (`ApiTokenEvents::ACCESS_CHECK`) and
-call `deny()` (a deny wins over any grant).
+call `deny()` (a deny wins over any grant). The operator page is not tenant-scoped (it lists every token of the
+application): on a multi-tenant host, point `access_checker` at a checker that only lets super-admins in.
 
 ## Owner status
 

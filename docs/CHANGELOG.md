@@ -83,6 +83,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   reads the storage, and the `kernel.request` pass is gone (`kernel.finish_request` runs on the exception path too).
 - The window between a revocation and requests already past authentication is documented in
   [CONCURRENCY.md](CONCURRENCY.md#residual-risks) (audit ZAB-S2-I4).
+- Audit ZAB-S3-M1 (pre-release, no GHSA): the operator page's lookup filter was a GET form that accepted a whole
+  token, so a pasted secret went into the URL (access and request logs, history) and was echoed into the input. A
+  leaked token is now searched with a POST form with CSRF (`OperatorLookupType`, a password input never printed back,
+  route `nowo_api_token_operator_lookup`) that redirects to `?lookup=<lookup id>`; the GET filter takes a lookup id or
+  a handle only, refuses longer values without echoing them, and the operator table shows the whole lookup id.
+- Audit ZAB-S3-L2 (pre-release, no GHSA): a request signed in with an API token (the host's token firewall covering
+  the pages) could open the account and operator pages and, for example, issue a broader token. Both refuse it now
+  (`ApiTokenContext::signedInWithToken()`).
+- Audit ZAB-S3-I1: the operator page requires `IS_AUTHENTICATED_FULLY` (no remember-me), like the account page.
+- Audit ZAB-S3-I5: a re-auth mark that expires while the form is checked asks for the re-auth again (422) instead of
+  failing with a 500.
+- Documented: the operator page is not tenant-scoped (SECURITY, USAGE, CONFIGURATION), the *New token* double submit
+  and *Revoke all* versus a concurrent issue (CONCURRENCY), and that 0.4.0 adopts UiKit's *secret once* reveal / copy
+  mode before its tag (contract §6.1 / §8.1, ROADMAP; audit ZAB-S3-L1).
 
 ### Changed
 

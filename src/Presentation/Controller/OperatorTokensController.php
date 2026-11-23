@@ -19,11 +19,13 @@ use Nowo\ApiTokenBundle\Contract\TokenId;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenAdminGuard;
 use Nowo\ApiTokenBundle\Presentation\Form\CsrfActionType;
 use Nowo\ApiTokenBundle\Presentation\Form\OperatorFilterType;
+use Nowo\ApiTokenBundle\Presentation\Form\OperatorLookupType;
 use Nowo\ApiTokenBundle\Presentation\View\AccountPages;
 use Nowo\ApiTokenBundle\Presentation\View\OperatorPages;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Form\FormFactoryInterface;
+use Symfony\Component\Form\FormInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -40,11 +42,13 @@ use function mb_substr;
 use function preg_match;
 use function preg_quote;
 use function str_contains;
+use function strlen;
 use function trim;
 
 /**
- * The operator page (contract §8.2, `REQ-UI-002`): every token, keyset pages, filters by owner key and lookup id, and
- * *Revoke* (audited with the operator as actor). Every action goes through {@see ApiTokenAdminGuard}. Lists show the
+ * The operator page (contract §8.2, `REQ-UI-002`): every token, keyset pages, filters by owner key and lookup id, a
+ * POST search that turns a pasted leaked token into its lookup id (the secret never reaches a URL, a log or the page),
+ * and *Revoke* (audited with the operator as actor). Every action goes through {@see ApiTokenAdminGuard}. Lists show the
  * owner key, name, handle, module names, dates; never the grants detail beyond module levels, never the reach entries.
  */
 final readonly class OperatorTokensController
@@ -73,46 +77,33 @@ final readonly class OperatorTokensController
     }
 
     /**
-     * Every token, newest first.
+     * Every token, newest first. The `lookup` filter takes a lookup id or a handle only: a longer value (a pasted
+     * token) matches nothing and is not printed back into the field (audit ZAB-S3-M1).
      */
     #[Route('/', name: 'nowo_api_token_operator', methods: ['GET'])]
     public function index(Request $request): Response
     {
         $this->guard->operator();
-        $filters = $this->forms->createNamed('', OperatorFilterType::class);
-        $filters->handleRequest($request);
-        $owner  = $filters->isSubmitted() ? $this->ownerFilter($filters->get('owner')->getData()) : null;
-        $lookup = $filters->isSubmitted() ? $this->lookupFilter($filters->get('lookup')->getData()) : null;
-        $after  = $request->query->get('after');
-        $next   = null;
-        if ($lookup !== null) {
-            $found  = $lookup === false ? null : $this->query->findByLookupId($lookup);
-            $tokens = $found instanceof ApiTokenView && ($owner === null || ($owner !== false && $found->owner->equals($owner))) ? [$found] : [];
-        } elseif ($owner === false) {
-            $tokens = [];
-        } else {
-            try {
-                $page = $this->query->page(is_string($after) && preg_match('/^' . AccountTokensController::ID . '$/D', $after) === 1 ? $after : null, self::PAGE_SIZE, $owner);
-            } catch (InvalidApiTokenArgumentException) {
-                throw new NotFoundHttpException('Unknown page.');
-            }
-            $tokens = $page->items;
-            $next   = $page->nextAfter;
-        }
-        $filtered = $owner !== null || $lookup !== null;
-        $revoke   = $this->forms->createNamed('', CsrfActionType::class, null, ['csrf_token_id' => AccountTokensController::CSRF_REVOKE, 'action' => '#'])->createView();
-        $keep     = [];
-        foreach (['owner', 'lookup'] as $key) {
-            $value = $filters->has($key) ? $filters->get($key)->getData() : null;
-            if (is_string($value) && trim($value) !== '') {
-                $keep[$key] = trim($value);
-            }
+
+        return $this->listResponse($request, $this->searchForm(), Response::HTTP_OK);
+    }
+
+    /**
+     * *Find a leaked token* (POST + CSRF): reads the lookup id of the pasted token, handle or lookup id and redirects to
+     * `?lookup=<lookup id>`, so the secret never reaches a URL. A refused value answers the list again with the error,
+     * never printing the value back.
+     */
+    #[Route('/lookup', name: 'nowo_api_token_operator_lookup', methods: ['POST'])]
+    public function lookup(Request $request): Response
+    {
+        $this->guard->operator();
+        $search = $this->searchForm();
+        $search->handleRequest($request);
+        if ($search->isSubmitted() && $search->isValid() && is_string($value = $search->get('token')->getData()) && preg_match(OperatorLookupType::pattern($this->tokenPrefix), $value, $match) === 1) {
+            return new RedirectResponse($this->router->generate('nowo_api_token_operator', ['lookup' => $match[1]]), Response::HTTP_SEE_OTHER);
         }
 
-        return new Response($this->twig->render('@NowoApiTokenBundle/operator/list.html.twig', [
-            'page'      => $this->pages()->list($tokens, $filters->createView(), $filtered, $revoke, $this->now()),
-            'next_href' => $next === null ? null : $this->router->generate('nowo_api_token_operator', $keep + ['after' => $next]),
-        ]));
+        return $this->listResponse(new Request(), $search, Response::HTTP_UNPROCESSABLE_ENTITY);
     }
 
     /**
@@ -137,9 +128,9 @@ final readonly class OperatorTokensController
     /**
      * `type:id` → owner; '' → no filter (null); anything else → matches nothing (false).
      */
-    private function ownerFilter(mixed $value): OwnerRef|false|null
+    private function ownerFilter(string $value): OwnerRef|false|null
     {
-        if (!is_string($value) || trim($value) === '') {
+        if (trim($value) === '') {
             return null;
         }
         if (!str_contains($value, ':')) {
@@ -154,19 +145,81 @@ final readonly class OperatorTokensController
     }
 
     /**
-     * A lookup id, the visible handle (`<prefix><lookup id>`) or a whole token (only its lookup id is read; the value is
-     * never stored or logged). '' → no filter (null); anything else → matches nothing (false).
+     * A lookup id or a handle (`<prefix><lookup id>`). '' → no filter (null); anything else → matches nothing (false).
      */
-    private function lookupFilter(mixed $value): LookupId|false|null
+    private function lookupFilter(string $value): LookupId|false|null
     {
-        if (!is_string($value) || trim($value) === '') {
+        if (trim($value) === '') {
             return null;
         }
-        if (preg_match('/^(?:' . preg_quote($this->tokenPrefix, '/') . ')?([a-z2-7]{12})(?:_.*)?$/Ds', trim($value), $match) !== 1) {
+        if (preg_match('/^(?:' . preg_quote($this->tokenPrefix, '/') . ')?([a-z2-7]{12})$/D', trim($value), $match) !== 1) {
             return false;
         }
 
         return new LookupId($match[1]);
+    }
+
+    /**
+     * The list with the GET filters of `$request` (owner key, lookup id or handle, keyset page) and the search form.
+     *
+     * @param FormInterface<mixed> $search
+     */
+    private function listResponse(Request $request, FormInterface $search, int $status): Response
+    {
+        $query  = $request->query->all();
+        $values = [];
+        foreach (['owner', 'lookup'] as $key) {
+            $values[$key] = is_string($query[$key] ?? null) ? $query[$key] : '';
+        }
+        // A value longer than a handle is a pasted token (or garbage): it matches nothing and is never echoed.
+        $pasted = strlen(trim($values['lookup'])) > OperatorFilterType::lookupMaxLength($this->tokenPrefix);
+        if ($pasted) {
+            $values['lookup'] = '';
+        }
+        $filters   = $this->forms->createNamed('', OperatorFilterType::class, null, ['token_prefix' => $this->tokenPrefix]);
+        $submitted = isset($query['owner']) || isset($query['lookup']);
+        if ($submitted) {
+            $filters->submit($values);
+        }
+        $owner  = $submitted ? $this->ownerFilter($values['owner']) : null;
+        $lookup = $pasted ? false : ($submitted ? $this->lookupFilter($values['lookup']) : null);
+        $after  = $query['after'] ?? null;
+        $next   = null;
+        if ($lookup !== null) {
+            $found  = $lookup === false ? null : $this->query->findByLookupId($lookup);
+            $tokens = $found instanceof ApiTokenView && ($owner === null || ($owner !== false && $found->owner->equals($owner))) ? [$found] : [];
+        } elseif ($owner === false) {
+            $tokens = [];
+        } else {
+            try {
+                $page = $this->query->page(is_string($after) && preg_match('/^' . AccountTokensController::ID . '$/D', $after) === 1 ? $after : null, self::PAGE_SIZE, $owner);
+            } catch (InvalidApiTokenArgumentException) {
+                throw new NotFoundHttpException('Unknown page.');
+            }
+            $tokens = $page->items;
+            $next   = $page->nextAfter;
+        }
+        $revoke = $this->forms->createNamed('', CsrfActionType::class, null, ['csrf_token_id' => AccountTokensController::CSRF_REVOKE, 'action' => '#'])->createView();
+        $keep   = [];
+        foreach ($values as $key => $value) {
+            if (trim($value) !== '') {
+                $keep[$key] = trim($value);
+            }
+        }
+
+        return new Response($this->twig->render('@NowoApiTokenBundle/operator/list.html.twig', [
+            'page'      => $this->pages()->list($tokens, $filters->createView(), $owner !== null || $lookup !== null, $revoke, $this->now()),
+            'search'    => $search->createView(),
+            'next_href' => $next === null ? null : $this->router->generate('nowo_api_token_operator', $keep + ['after' => $next]),
+        ]), $status);
+    }
+
+    /**
+     * @return FormInterface<mixed>
+     */
+    private function searchForm(): FormInterface
+    {
+        return $this->forms->create(OperatorLookupType::class, null, ['token_prefix' => $this->tokenPrefix, 'action' => $this->router->generate('nowo_api_token_operator_lookup')]);
     }
 
     /**

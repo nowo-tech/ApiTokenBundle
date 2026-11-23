@@ -39,7 +39,10 @@ operator:
     empty_filtered: "Aucun jeton ne correspond à ces filtres."
     filter: "Filtrer"
     filter_owner: "Propriétaire (type:id)"
-    filter_lookup: "Préfixe du jeton ou identifiant"
+    filter_lookup: "Identifiant visible ou identifiant de recherche"
+    search_token: "Jeton complet (signalé comme divulgué)"
+    search_token_help: "Collez-le ici, jamais dans la barre d'adresse : seul son identifiant de recherche est lu, puis la liste est filtrée."
+    search: "Trouver le jeton"
     pages: "Pages"
     next: "Page suivante"
 form:
@@ -95,6 +98,7 @@ flash:
     revoked_all: "%count% jeton(s) révoqué(s)."
 error:
     reauth_failed: "Impossible de confirmer que c'est vous. Réessayez."
+    reauth_expired: "Votre confirmation a expiré. Confirmez de nouveau que c'est vous."
     reauth_limited: "Trop de tentatives. Réessayez dans %seconds% secondes."
     issue_limited: "Vous avez créé beaucoup de jetons en peu de temps. Réessayez plus tard."
     invalid: "Vérifiez le formulaire : une valeur n'est pas valide."
