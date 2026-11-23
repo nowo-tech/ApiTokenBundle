@@ -28,7 +28,7 @@ class Member implements UserInterface
 
     public function getRoles(): array
     {
-        return ['ROLE_MEMBER'];
+        return $this->memberId === 'admin' ? ['ROLE_MEMBER', 'ROLE_ADMIN'] : ['ROLE_MEMBER'];
     }
 
     public function eraseCredentials(): void

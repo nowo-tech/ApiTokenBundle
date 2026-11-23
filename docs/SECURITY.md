@@ -54,8 +54,13 @@ From contract §6.11. Each threat names the control that answers it and the slic
 | Session fixation through a token | The container refuses to build when a firewall that lists the authenticator is not stateless, so a token never becomes a web session | S2 |
 | Forged request stamp | `ApiTokenContext` is written only by the authenticator, after Symfony accepted the passport; any earlier `_nowo_api_token*` attribute is removed in `supports()` and on failure | S2 |
 | Reach widening by a host filter | Each `ReachFilterInterface` answer is intersected with the reach it was given | S2 |
-| Clickjacking of the create page | `X-Frame-Options: DENY`, `frame-ancestors 'none'` appended to the host CSP | S3 |
-| CSRF on revoke | FormKit CSRF forms on every session POST; the Bearer API is exempt (stateless) | S3 |
+| Clickjacking of the create page | `X-Frame-Options: DENY` and an extra `Content-Security-Policy: frame-ancestors 'none'` header on every page (browsers enforce every policy, so a laxer host policy cannot weaken it) | S3 |
+| CSRF on issue, revoke, revoke all | CSRF-protected forms on every session POST (one token id per action; the *New token* token is renewed after an issue); the Bearer API is exempt (stateless) | S3 |
+| Session riding: a stolen or left-open session creates a token | Fresh re-auth before *New token* and *Revoke all* (password or the host's step-up), bound to the session id and the owner, 5 minutes, 5 attempts per 15 minutes and session; remembered-me sessions are refused (`IS_AUTHENTICATED_FULLY`) | S3 |
+| Secret exposure after create | Shown once in the POST answer, printed once in the HTML, never in a flash, the session, a redirect, a log or an event; `Cache-Control: no-store, private`, `Referrer-Policy: same-origin`; a reload cannot re-issue (CSRF token renewed) | S3 |
+| Token mass creation | `rate_limit.issue_per_owner` (10 / hour) plus `max_per_owner` | S3 |
+| Revoking or reading another person's tokens | The account pages only read the signed-in owner's tokens; revoke is owner-checked (another id answers 404); the operator page needs the role (or checker) and passes a per-token access event | S3 |
+| Operator page exposure | Default `ROLE_ADMIN`, the build fails without SecurityBundle; `admin_ui.security.allow_unauthenticated` is a demo-only footgun (anyone could revoke tokens) | S3 |
 | Privilege growth | Grants re-validated against the registry on read; unknown levels dropped, never widened; every API re-checks the person's permissions | S1, S4 |
 | Collation (audit LQ) | `owner_id` in `utf8mb4_bin`, PHP `OwnerRef::equals()` re-check on every access / erasure query | S1 |
 | Worker-mode bleed between two tokens | Principal only on the request attribute; no memo of tokens, owners or reach; the bundle's security token removed from the token storage at every main-request boundary (Symfony only clears it through the services resetter); N-request tests direct and through the firewall | S1, S2 |
@@ -116,7 +121,9 @@ Never logged: the secret, the presented value, the hash, the pepper, reach entri
 
 - S1 exposes **no HTTP endpoint and no controller**. The services are public container ids for host code; the two
   console commands need shell access to the host (break-glass by design).
-- S2 adds the firewall authenticator (stateless firewalls only, refused at build otherwise) and no route; S3 the account page
+- S2 adds the firewall authenticator (stateless firewalls only, refused at build otherwise) and no route. S3 adds the
+  page routes, only through the `nowo_api_token` route import and only for the enabled areas; protect
+  `admin_ui.path_prefix` with `access_control` too (REQ-UI-002 layer 1). S3 the account page
   (`IS_AUTHENTICATED_FULLY` plus re-authentication) and the operator page (`ROLE_ADMIN` by default); S5 the versioned
   `<prefix>/tokens/v1/*` API, Bearer only.
 
@@ -132,7 +139,7 @@ Never logged: the secret, the presented value, the hash, the pepper, reach entri
   30 writes per token per minute (unsafe methods with `count_rest_writes`, McpKit tools in S4), 20 failed tokens per
   client IP per 15 minutes. No lock: exactly concurrent requests can over-admit by at most the number of workers. The
   pool must be shared by every worker and server; behind a proxy, `framework.trusted_proxies` must be set, or every
-  client shares the proxy's IP budget (one client could then block the others). S3 adds the issue-per-owner limit.
+  client shares the proxy's IP budget (one client could then block the others). S3 adds the issue-per-owner limit and the re-auth attempts per session.
 
 ## Dependencies and updates
 

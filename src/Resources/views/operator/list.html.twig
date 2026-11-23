@@ -1,0 +1,18 @@
+{#
+  Operator page (contract §8.2, REQ-UI-002/003): UiKit list scaffold. Variables: page (UiKit ListPage, rows:
+  Presentation\View\TokenRow), next_href (keyset page, null when none). The scaffold renders the filters (owner key,
+  lookup id), the table, the revoke confirm dialogs and the empty state; this template fills the row cells and the pager.
+#}
+{% extends '@NowoUiKit/page/list.html.twig' %}
+
+{% block nowo_ui_list_row %}
+    {{- include('@NowoApiTokenBundle/_row.html.twig', {row: row, page: page, operator: true}, false) -}}
+{% endblock %}
+
+{% block nowo_ui_list_after %}
+    {% if next_href|default(null) %}
+        <nav class="{{ nowo_ui_class('toolbar', page.bundle) }}" aria-label="{{ 'operator.pages'|trans({}, 'NowoApiTokenBundle') }}">
+            <a class="{{ nowo_ui_class('btn_secondary', page.bundle) }}" href="{{ next_href }}" rel="next" data-testid="api-token-next">{{ 'operator.next'|trans({}, 'NowoApiTokenBundle') }}</a>
+        </nav>
+    {% endif %}
+{% endblock %}

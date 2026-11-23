@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-baseline`
 **Created**: 2026-11-12
-**Status**: Baseline (S0 scaffold + S1 core, audit LW fixes, 0.2.0 concurrency, S2 firewall + limits)
+**Status**: Baseline (S0 scaffold + S1 core, audit LW fixes, 0.2.0 concurrency, S2 firewall + limits, S3 pages)
 **Input**: Contract 221-A ([`docs/CONTRACT.md`](../../docs/CONTRACT.md)), owner-approved 2026-11-12 with every Q-O
 answered as recommended; S1 security audit LW (2026-11-11).
 
@@ -130,6 +130,16 @@ DBAL only and their listeners and events run after the outermost commit; no stat
 | FR-RATE-001 | One bucket per token for every module, a write budget (unsafe methods with `count_rest_writes`), failed tokens per client IP peeked before parsing and counted on every failure; counters in `rate_limit.cache_pool` (required), IP keyed by HMAC with `kernel.secret`, nothing in process memory. |
 | FR-REACH-001 | `ReachFilterInterface` services run in the authenticator's step 8; each answer is intersected with the reach it was given, so a filter never widens. |
 
+### Pages (S3)
+
+| ID | Requirement |
+| --- | --- |
+| FR-PAGE-001 | Account pages (`IS_AUTHENTICATED_FULLY`, signed-in owner only): list, *New token* (modules of the policy, flags off by default, reach from the provider, expiry choices within the policy maximum), *Revoke* (CSRF, another owner's id → 404), *Revoke all*; the secret printed once in the POST answer only, never in session, flash, redirect, log or event; the issue CSRF token renewed after an issue; page and dialog-fragment answers. |
+| FR-PAGE-002 | Every page answers `X-Frame-Options: DENY`, an extra `Content-Security-Policy: frame-ancestors 'none'` header, `Cache-Control: no-store, private`, `Referrer-Policy: same-origin`. |
+| FR-PAGE-003 | The container refuses to build an enabled page area without Twig, forms, router, SecurityBundle (unless demo `allow_unauthenticated` for the operator page), CSRF, and for the password gate a password hasher. |
+| FR-REAUTH-001 | *New token* and *Revoke all* need a fresh re-auth: a session mark bound to the session id and the owner, `reauth.fresh_seconds`, `reauth.max_attempts` per 15 minutes and session; the gate is replaceable (`reauth.gate`, own form type). |
+| FR-ADMIN-001 | Operator page (REQ-UI-002): `access_roles` / `access_checker` / `allow_unauthenticated`, per-token `ApiTokenAccessCheckEvent` (deny wins), keyset pages, filters by owner key and lookup id, revoke with the operator as actor. |
+
 ### Owner (host integration)
 
 | ID | Requirement |
@@ -180,6 +190,7 @@ DBAL only and their listeners and events run after the outermost commit; no stat
 | SC-004 | The worker test serves 2,000 requests in one kernel with no cross-owner data, ≤ 1 MiB memory drift, and refuses an owner deactivated by SQL on the next request. |
 | SC-005 | [`code-inventory.md`](code-inventory.md) maps **every** file of `src/` (**75** files at this baseline; the count is re-stated there on each slice) to its `FR-*` IDs, with no `FR-SRC-001` placeholder. |
 | SC-006 | The S1 REQ-SEC-004 audit (and its delta re-audit) passes before the 0.1.0 tag. |
+| SC-008 | The S3 REQ-SEC-004 audit passes before the 0.4.0 tag; the page suite runs on both host kinds; the UiKit page contract passes. |
 | SC-007 | The S2 REQ-SEC-004 audit passes before the 0.3.0 tag; the firewall suite runs on both host kinds and every CI database. |
 
 ## Non-goals
@@ -187,8 +198,9 @@ DBAL only and their listeners and events run after the outermost commit; no stat
 - OAuth 2 flows, refresh tokens, client credentials, device flow (TimeTrack keeps its own).
 - Organisation / project / machine tokens (Q-O7) and HMAC request signing.
 - Deciding what a module allows: every API re-checks the person's permissions; a token only narrows them.
-- In S1: HTTP firewall, rate limits, pages, bridges and the public API (S2–S5). In S2: pages, the issue-per-owner and
-  re-auth limits (S3), bridges (S4) and the public API (S5).
+- In S1: HTTP firewall, rate limits, pages, bridges and the public API (S2–S5). In S3: bridges (S4, including the base
+  URLs of the account page and the module labels from the bridges), the public API (S5), the demo integration of the
+  pages (follow-up).
 
 ## Assumptions
 

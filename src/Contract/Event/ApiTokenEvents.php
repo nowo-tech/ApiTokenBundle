@@ -20,4 +20,7 @@ final class ApiTokenEvents
 
     /** {@see ApiTokenAuthFailedEvent} */
     public const AUTH_FAILED = ApiTokenAuthFailedEvent::class;
+
+    /** {@see ApiTokenAccessCheckEvent} */
+    public const ACCESS_CHECK = ApiTokenAccessCheckEvent::class;
 }

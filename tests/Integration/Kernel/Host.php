@@ -102,16 +102,20 @@ final readonly class Host
      *
      * @param array<string, mixed>|null $firewall the `api` firewall (null = the standard host's, with the host's checker;
      *                                            the DDD host then has no secured firewall)
+     * @param array<string, mixed> $security more `security` keys (`extra_firewalls` are added after `api`)
      *
      * @return Closure(ContainerConfigurator, string): void
      */
-    public function configure(?array $firewall = null): Closure
+    public function configure(?array $firewall = null, array $security = []): Closure
     {
         $kind  = $this->kind;
         $given = $firewall;
         $firewall ??= ['pattern' => '^/api', 'stateless' => true, 'provider' => 'users', 'user_checker' => ActiveUserChecker::class];
 
-        return static function (ContainerConfigurator $container, string $url) use ($kind, $firewall, $given): void {
+        return static function (ContainerConfigurator $container, string $url) use ($kind, $firewall, $given, $security): void {
+            /** @var array<string, mixed> $extraFirewalls */
+            $extraFirewalls = $security['extra_firewalls'] ?? [];
+            unset($security['extra_firewalls']);
             $root = dirname(__DIR__, 3);
             if ($kind === self::STANDARD) {
                 $container->extension('doctrine', [
@@ -120,8 +124,8 @@ final readonly class Host
                 ]);
                 $container->extension('security', [
                     'providers' => ['users' => ['entity' => ['class' => User::class, 'property' => 'id']]],
-                    'firewalls' => ['api' => $firewall],
-                ]);
+                    'firewalls' => ['api' => $firewall] + $extraFirewalls,
+                ] + $security);
                 $container->services()->set(ActiveUserChecker::class);
             } else {
                 $container->extension('doctrine', [
@@ -140,7 +144,7 @@ final readonly class Host
                 // A DDD host keeps its own user provider; the token firewall needs none (the bundle's resolver loads the user).
                 $container->extension('security', $given === null
                     ? ['firewalls' => ['main' => ['security' => false]]]
-                    : ['providers' => ['none' => ['memory' => null]], 'firewalls' => ['api' => $given + ['provider' => 'none']]]);
+                    : ['providers' => ['none' => ['memory' => null]], 'firewalls' => ['api' => $given + ['provider' => 'none']] + $extraFirewalls] + $security);
                 $container->services()->set(MemberOwnerResolver::class)->autowire();
                 $container->services()->set(MemberChecker::class);
             }

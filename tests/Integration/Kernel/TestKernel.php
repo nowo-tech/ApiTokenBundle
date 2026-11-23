@@ -10,10 +10,13 @@ use Nowo\ApiTokenBundle\NowoApiTokenBundle;
 use Nowo\ApiTokenBundle\Tests\Fixtures\AuthEchoController;
 use Nowo\ApiTokenBundle\Tests\Fixtures\EchoController;
 use Nowo\ApiTokenBundle\Tests\Fixtures\WhoAmIController;
+use Nowo\FormKitBundle\NowoFormKitBundle;
+use Nowo\UiKitBundle\NowoUiKitBundle;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
+use Symfony\Bundle\TwigBundle\TwigBundle;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -48,6 +51,8 @@ final class TestKernel extends Kernel
         /** @var list<CompilerPassInterface> host compiler passes (e.g. UserKit's account-status wiring) */
         private readonly array $passes = [],
         private readonly bool $whoamiRoute = false,
+        /** S3 pages: TwigBundle, UiKit, FormKit, forms, CSRF, sessions and the bundle's page routes */
+        private readonly bool $ui = false,
     ) {
         parent::__construct('test', false);
     }
@@ -61,6 +66,11 @@ final class TestKernel extends Kernel
         }
         if ($this->databaseUrl !== null) {
             yield new DoctrineBundle();
+        }
+        if ($this->ui) {
+            yield new TwigBundle();
+            yield new NowoUiKitBundle();
+            yield new NowoFormKitBundle();
         }
         yield new NowoApiTokenBundle();
     }
@@ -102,6 +112,18 @@ final class TestKernel extends Kernel
             'php_errors'            => ['log' => true],
             'router'                => ['utf8' => true],
         ]);
+        if ($this->ui) {
+            $container->extension('framework', [
+                'form'            => ['enabled' => true],
+                'csrf_protection' => ['enabled' => true],
+                'session'         => ['storage_factory_id' => 'session.storage.factory.mock_file'],
+                'validation'      => ['enabled' => true],
+                'translator'      => ['fallbacks' => ['en']],
+                'default_locale'  => 'en',
+                'assets'          => ['enabled' => true],
+            ]);
+            $container->extension('twig', ['strict_variables' => true]);
+        }
         if ($this->databaseUrl !== null && !$this->configure instanceof Closure) {
             $container->extension('doctrine', ['dbal' => ['url' => $this->databaseUrl]]);
         }
@@ -136,6 +158,9 @@ final class TestKernel extends Kernel
         $routes->add('echo', '/echo')->controller(EchoController::class)->methods(['GET']);
         if ($this->authRoute) {
             $routes->add('auth', '/auth')->controller(AuthEchoController::class)->methods(['GET']);
+        }
+        if ($this->ui) {
+            $routes->import('.', 'nowo_api_token');
         }
         if ($this->whoamiRoute) {
             $routes->add('api_whoami', '/api/whoami')->controller(WhoAmIController::class)->methods(['GET', 'POST']);

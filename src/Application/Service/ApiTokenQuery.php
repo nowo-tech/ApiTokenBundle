@@ -8,6 +8,7 @@ use Nowo\ApiTokenBundle\Contract\ApiTokenPage;
 use Nowo\ApiTokenBundle\Contract\ApiTokenQueryInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenView;
 use Nowo\ApiTokenBundle\Contract\Exception\InvalidApiTokenArgumentException;
+use Nowo\ApiTokenBundle\Contract\LookupId;
 use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\TokenId;
 use Nowo\ApiTokenBundle\Domain\ApiToken;
@@ -46,6 +47,16 @@ final readonly class ApiTokenQuery implements ApiTokenQueryInterface
     public function find(TokenId $id): ?ApiTokenView
     {
         return $this->store->findById($id)?->toView();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function findByLookupId(LookupId $lookupId): ?ApiTokenView
+    {
+        $token = $this->store->findByLookupId($lookupId);
+
+        return $token instanceof ApiToken && $token->lookupId()->value === $lookupId->value ? $token->toView() : null;
     }
 
     /**

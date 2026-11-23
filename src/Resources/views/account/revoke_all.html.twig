@@ -1,0 +1,10 @@
+{#
+  *Revoke all* page (contract §6.6, §6.10): UiKit form scaffold with the re-auth step. Variable: page (UiKit FormPage).
+#}
+{% extends '@NowoUiKit/page/form.html.twig' %}
+
+{% block nowo_ui_form_body %}
+    {#- Form-level errors (refusals of the issuer, the re-auth step, the rate limits) above the fields. -#}
+    <div data-testid="api-token-form-errors">{{ form_errors(page.form) }}</div>
+    {{ parent() }}
+{% endblock %}

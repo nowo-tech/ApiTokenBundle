@@ -6,9 +6,11 @@ namespace Nowo\ApiTokenBundle\Tests\Fixtures;
 
 use DateTimeImmutable;
 use Nowo\ApiTokenBundle\Contract\ApiTokenRateLimiterInterface;
+use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\RateLimitScope;
 use Nowo\ApiTokenBundle\Contract\RateLimitState;
 use Nowo\ApiTokenBundle\Contract\TokenId;
+use SensitiveParameter;
 
 use function in_array;
 
@@ -51,6 +53,20 @@ final class FakeRateLimiter implements ApiTokenRateLimiterInterface
     public function registerFailedToken(string $clientIp): void
     {
         $this->calls[] = 'failed:' . $clientIp;
+    }
+
+    public function consumeIssue(OwnerRef $owner): RateLimitState
+    {
+        $this->calls[] = 'issue:' . $owner->key();
+
+        return $this->state(RateLimitScope::Issue);
+    }
+
+    public function consumeReauth(#[SensitiveParameter] string $sessionKey): RateLimitState
+    {
+        $this->calls[] = 'reauth';
+
+        return $this->state(RateLimitScope::Reauth);
     }
 
     private function state(RateLimitScope $scope): RateLimitState

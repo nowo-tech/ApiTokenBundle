@@ -37,9 +37,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Firewall functional suite for the standard and the DDD host; host-API integration guide in
     [USAGE.md](USAGE.md#protecting-your-own-api).
 
+- S3 account + operator pages (contract 221-A §8, §6.10, `REQ-AUTH-013`, `REQ-UI-002`), registered with
+  `web_ui.enabled` / `admin_ui.enabled` and loaded by the route import `type: nowo_api_token`:
+  - Account → Security → API tokens (`web_ui.path_prefix`, `IS_AUTHENTICATED_FULLY`): UiKit list (name, handle
+    `nwt_k7m2…`, module levels, *agents may delete* badge, reach as *everything* or a count, created, last used,
+    expiry with a warning chip within 7 days), *Revoke* (confirm dialog, FormKit CSRF form; another person's token
+    id answers 404), *Revoke all* (re-auth + confirmation tick), *New token* (page or UiKit remote form dialog):
+    re-auth step, name, one select per module offered by the policy, the module flags (MCP *destructive* off by
+    default), reach (*everything* or the places of `ReachProviderInterface`, grouped), expiry from `expiry.choices`
+    within the policy maximum.
+  - The secret is shown once, in the answer of the POST that created it (a dialog opened on load, or the dialog
+    fragment), printed once in the HTML; the form's CSRF token is renewed after the issue, so a reload issues nothing.
+  - Re-auth (`ReauthGateInterface`, default `PasswordReauthGate` on the host's password hasher, `reauth.gate` for
+    SSO hosts): a freshness mark in the session bound to the session id and the owner (`reauth.fresh_seconds`),
+    `reauth.max_attempts` per 15 minutes and session.
+  - `rate_limit.issue_per_owner` on the account page.
+  - Framing headers on every page: `X-Frame-Options: DENY`, an extra `Content-Security-Policy: frame-ancestors 'none'`
+    header (the host's policy is kept), `Cache-Control: no-store, private`, `Referrer-Policy: same-origin`.
+  - Operator page (`admin_ui.path_prefix`): every token, keyset pages, filters by owner key and by lookup id / visible
+    handle / whole token, *Revoke* (reason `operator`, the operator as actor). Access through
+    `ApiTokenAccessCheckerInterface` (`admin_ui.security.access_roles`, `access_checker`, `allow_unauthenticated`
+    for demos) and the per-token `ApiTokenAccessCheckEvent` (`ApiTokenEvents::ACCESS_CHECK`, deny wins), enforced by
+    `ApiTokenAdminGuard` (REQ-UI-002).
+  - `ApiTokenQueryInterface::findByLookupId()`; `ApiTokenRateLimiterInterface::consumeIssue()` / `consumeReauth()`
+    (`RateLimitScope::Issue` / `Reauth`).
+  - Build checks (`UiPass`): Twig, forms, router, SecurityBundle, CSRF and, for the password gate, a password hasher.
+  - Translations ×7 for the pages (`NowoApiTokenBundle` domain) and the constraint messages (`validators` domain);
+    [TEMPLATES.md](TEMPLATES.md); UiKit page contract test; page suite for the standard and the DDD host (own
+    re-auth gate with its own form type); Flex recipe route file.
+
 ### Changed
 
 - Requires `symfony/security-http`, `symfony/http-foundation` and `symfony/rate-limiter` (^7.4 || ^8.0) at runtime.
+- Requires (S3) `nowo-tech/ui-kit-bundle` ^2.68, `nowo-tech/form-kit-bundle` ^2.24, `symfony/form`, `symfony/validator`,
+  `symfony/security-csrf`, `symfony/password-hasher`, `symfony/routing`, `symfony/translation-contracts`, `twig/twig`,
+  `twig/extra-bundle` and `twig/string-extra` ^3.12 (REQ-TWIG-004).
 - `ApiTokenAuthenticator` takes an optional `ReachFilterChain` (last constructor argument).
 
 - Demo: runs in UiKit's demo platform shell (`nowo-tech/ui-kit-bundle` ^2.60); the demo's own header is gone and the pages use the shell page headers and section cards. Demo only, no bundle change.

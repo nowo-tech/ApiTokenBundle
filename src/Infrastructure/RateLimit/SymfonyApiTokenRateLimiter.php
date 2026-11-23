@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Nowo\ApiTokenBundle\Infrastructure\RateLimit;
 
+use DateTimeImmutable;
 use Nowo\ApiTokenBundle\Contract\ApiTokenRateLimiterInterface;
+use Nowo\ApiTokenBundle\Contract\OwnerRef;
 use Nowo\ApiTokenBundle\Contract\RateLimitScope;
 use Nowo\ApiTokenBundle\Contract\RateLimitState;
 use Nowo\ApiTokenBundle\Contract\TokenId;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ClientIpHasher;
+use SensitiveParameter;
 use Symfony\Component\RateLimiter\RateLimit;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 
@@ -26,12 +29,16 @@ final readonly class SymfonyApiTokenRateLimiter implements ApiTokenRateLimiterIn
      * @param RateLimiterFactoryInterface $perToken `rate_limit.per_token`
      * @param RateLimiterFactoryInterface $writes `rate_limit.writes`
      * @param RateLimiterFactoryInterface $failedPerIp `rate_limit.failed_per_ip`
+     * @param RateLimiterFactoryInterface|null $issuePerOwner `rate_limit.issue_per_owner` (null: no limit)
+     * @param RateLimiterFactoryInterface|null $reauth `reauth.max_attempts` per 15 minutes (null: no limit)
      */
     public function __construct(
         private RateLimiterFactoryInterface $perToken,
         private RateLimiterFactoryInterface $writes,
         private RateLimiterFactoryInterface $failedPerIp,
         private ClientIpHasher $ipHasher,
+        private ?RateLimiterFactoryInterface $issuePerOwner = null,
+        private ?RateLimiterFactoryInterface $reauth = null,
     ) {
     }
 
@@ -74,6 +81,31 @@ final readonly class SymfonyApiTokenRateLimiter implements ApiTokenRateLimiterIn
     public function registerFailedToken(string $clientIp): void
     {
         $this->failedPerIp->create($this->ipHasher->full($clientIp))->consume();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function consumeIssue(OwnerRef $owner): RateLimitState
+    {
+        return $this->optional(RateLimitScope::Issue, $this->issuePerOwner, $this->ipHasher->full($owner->key()));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function consumeReauth(#[SensitiveParameter] string $sessionKey): RateLimitState
+    {
+        return $this->optional(RateLimitScope::Reauth, $this->reauth, $this->ipHasher->full($sessionKey));
+    }
+
+    private function optional(RateLimitScope $scope, ?RateLimiterFactoryInterface $factory, string $key): RateLimitState
+    {
+        if (!$factory instanceof RateLimiterFactoryInterface) {
+            return new RateLimitState($scope, true, 0, 0, new DateTimeImmutable());
+        }
+
+        return $this->state($scope, $factory->create($key)->consume());
     }
 
     private function state(RateLimitScope $scope, RateLimit $limit): RateLimitState

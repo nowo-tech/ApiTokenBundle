@@ -17,6 +17,7 @@ use Nowo\ApiTokenBundle\Application\Service\ReachFilterChain;
 use Nowo\ApiTokenBundle\Application\Token\TokenCodec;
 use Nowo\ApiTokenBundle\Application\Token\TokenHasher;
 use Nowo\ApiTokenBundle\Application\Token\TokenHasherInterface;
+use Nowo\ApiTokenBundle\Contract\ApiTokenAccessCheckerInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenAuthenticatorInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenIssuerInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenPolicyInterface;
@@ -30,6 +31,7 @@ use Nowo\ApiTokenBundle\Contract\OwnerResolverInterface;
 use Nowo\ApiTokenBundle\Contract\OwnerStatusInterface;
 use Nowo\ApiTokenBundle\Contract\ReachFilterInterface;
 use Nowo\ApiTokenBundle\Contract\ReachProviderInterface;
+use Nowo\ApiTokenBundle\Contract\ReauthGateInterface;
 use Nowo\ApiTokenBundle\Contract\TokenRevocationListenerInterface;
 use Nowo\ApiTokenBundle\Domain\ApiTokenStoreInterface;
 use Nowo\ApiTokenBundle\Infrastructure\Console\IssueTokenCommand;
@@ -43,10 +45,24 @@ use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitQueue;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitQueueResetListener;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\DbalApiTokenStore;
 use Nowo\ApiTokenBundle\Infrastructure\RateLimit\SymfonyApiTokenRateLimiter;
+use Nowo\ApiTokenBundle\Infrastructure\Security\AllowAllApiTokenAccessChecker;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenAdminGuard;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenTokenStorageResetListener;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ClientIpHasher;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ConfigurableApiTokenAccessChecker;
+use Nowo\ApiTokenBundle\Infrastructure\Security\PasswordReauthGate;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ReauthSession;
+use Nowo\ApiTokenBundle\Presentation\Controller\AccountTokensController;
+use Nowo\ApiTokenBundle\Presentation\Controller\OperatorTokensController;
+use Nowo\ApiTokenBundle\Presentation\Form\CsrfActionType;
+use Nowo\ApiTokenBundle\Presentation\Form\NewTokenType;
+use Nowo\ApiTokenBundle\Presentation\Form\OperatorFilterType;
+use Nowo\ApiTokenBundle\Presentation\Form\RevokeAllType;
+use Nowo\ApiTokenBundle\Presentation\Http\FramingHeadersListener;
+use Nowo\ApiTokenBundle\Presentation\Routing\ApiTokenRouteLoader;
 use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponsePolicy;
+use Nowo\UiKitBundle\Dialog\RemoteDialogResponder;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -106,6 +122,10 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
      */
     public function prepend(ContainerBuilder $container): void
     {
+        if ($container->hasExtension('twig')) {
+            // Twig namespace @NowoApiTokenBundle (contract §2); the host's templates/bundles/ overrides still win.
+            $container->prependExtensionConfig('twig', ['paths' => [__DIR__ . '/../Resources/views' => 'NowoApiTokenBundle']]);
+        }
         if (!$container->hasExtension('doctrine')) {
             return;
         }
@@ -249,6 +269,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         ]);
         $container->setAlias(ApiTokenAuthenticatorInterface::class, ApiTokenAuthenticator::class)->setPublic(true);
         $this->registerFirewall($container, $config, $dispatcher);
+        $this->registerUi($container, $config, $clock, $dispatcher);
 
         // Registered from their #[AsCommand] attribute (REQ-SF-003): autoconfiguration adds the console tag.
         $container->register(IssueTokenCommand::class, IssueTokenCommand::class)
@@ -266,7 +287,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
      */
     private function registerFirewall(ContainerBuilder $container, array $config, Reference $dispatcher): void
     {
-        /** @var array{cache_pool: string, count_rest_writes: bool, per_token: array{limit: int, interval: string}, writes: array{limit: int, interval: string}, failed_per_ip: array{limit: int, interval: string}} $rate */
+        /** @var array{cache_pool: string, count_rest_writes: bool, per_token: array{limit: int, interval: string}, writes: array{limit: int, interval: string}, failed_per_ip: array{limit: int, interval: string}, issue_per_owner: array{limit: int, interval: string}} $rate */
         $rate = $config['rate_limit'];
         /** @var array{on_failure: string} $firewall */
         $firewall = $config['firewall'];
@@ -281,7 +302,21 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
             ]);
             $factories[] = new Reference(self::ALIAS . '.limiter.' . $key);
         }
-        $container->register(SymfonyApiTokenRateLimiter::class, SymfonyApiTokenRateLimiter::class)->setArguments([...$factories, new Reference(ClientIpHasher::class)]);
+        /** @var array{max_attempts: int} $reauth */
+        $reauth = $config['reauth'];
+        $extra  = [
+            'issue_per_owner' => ['nowo_api_token_issue', $rate['issue_per_owner']['limit'], $rate['issue_per_owner']['interval']],
+            'reauth'          => ['nowo_api_token_reauth', $reauth['max_attempts'], '15 minutes'],
+        ];
+        $optional = [];
+        foreach ($extra as $key => [$id, $limit, $interval]) {
+            $container->register(self::ALIAS . '.limiter.' . $key, RateLimiterFactory::class)->setArguments([
+                ['id' => $id, 'policy' => 'fixed_window', 'limit' => $limit, 'interval' => $interval],
+                new Reference(self::ALIAS . '.rate_limit_storage'),
+            ]);
+            $optional[] = new Reference(self::ALIAS . '.limiter.' . $key);
+        }
+        $container->register(SymfonyApiTokenRateLimiter::class, SymfonyApiTokenRateLimiter::class)->setArguments([...$factories, new Reference(ClientIpHasher::class), ...$optional]);
         $container->setAlias(ApiTokenRateLimiterInterface::class, SymfonyApiTokenRateLimiter::class)->setPublic(true);
 
         // No PSR clock: Retry-After is measured on the limiter's own time base (symfony/rate-limiter reads microtime()).
@@ -294,6 +329,81 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
             ->setArguments([new Reference(ApiTokenTokenStorageResetListener::TOKEN_STORAGE)])
             ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => ApiTokenTokenStorageResetListener::REQUEST_PRIORITY])
             ->addTag('kernel.event_listener', ['event' => 'kernel.finish_request', 'method' => 'onFinishRequest', 'priority' => ApiTokenTokenStorageResetListener::FINISH_PRIORITY]);
+    }
+
+    /**
+     * S3: the account pages (`web_ui`), the operator page (`admin_ui`), the re-auth step and the framing headers. Nothing
+     * while both areas are off.
+     *
+     * @param array<string, mixed> $config
+     */
+    private function registerUi(ContainerBuilder $container, array $config, Reference $clock, Reference $dispatcher): void
+    {
+        /** @var array{enabled: bool, path_prefix: string, layout_template: string|null, templates: array{list: string|null, created: string|null}} $web */
+        $web = $config['web_ui'];
+        /** @var array{enabled: bool, path_prefix: string, security: array{access_roles: list<string>, access_checker: string|null, allow_unauthenticated: bool}} $admin */
+        $admin = $config['admin_ui'];
+        /** @var array{enabled: bool, fresh_seconds: int, max_attempts: int, gate: string|null} $reauth */
+        $reauth = $config['reauth'];
+        /** @var array{default_days: int, choices: list<int>} $expiry */
+        $expiry = $config['expiry'];
+        /** @var array{allow_everything: bool} $reach */
+        $reach = $config['reach'];
+        $container->setParameter(self::ALIAS . '.ui', ['web' => $web['enabled'], 'admin' => $admin['enabled'], 'allow_unauthenticated' => $admin['security']['allow_unauthenticated'], 'reauth_gate' => $reauth['enabled'] && $reauth['gate'] === null]);
+        $container->register(ApiTokenRouteLoader::class, ApiTokenRouteLoader::class)
+            ->setArguments([['enabled' => $web['enabled'], 'path_prefix' => $web['path_prefix']], ['enabled' => $admin['enabled'], 'path_prefix' => $admin['path_prefix']], '%kernel.environment%'])
+            ->addTag('routing.loader');
+        if (!$web['enabled'] && !$admin['enabled']) {
+            return;
+        }
+        $container->register(FramingHeadersListener::class, FramingHeadersListener::class)
+            ->addTag('kernel.event_listener', ['event' => 'kernel.response', 'method' => 'onKernelResponse', 'priority' => FramingHeadersListener::PRIORITY]);
+        foreach ([CsrfActionType::class, NewTokenType::class, RevokeAllType::class, OperatorFilterType::class] as $type) {
+            $container->register($type, $type)->addTag('form.type');
+        }
+        $common = [
+            'twig'   => new Reference('twig'),
+            'router' => new Reference('router'),
+            'forms'  => new Reference('form.factory'),
+        ];
+
+        if ($web['enabled']) {
+            $this->service($container, ReauthGateInterface::class, $reauth['gate'], (new Definition(PasswordReauthGate::class))->setArguments([new Reference('security.user_password_hasher', ContainerInterface::NULL_ON_INVALID_REFERENCE)]));
+            $container->register(ReauthSession::class, ReauthSession::class)->setArguments([
+                new Reference(ReauthGateInterface::class), new Reference(OwnerResolverInterface::class), new Reference(ApiTokenRateLimiterInterface::class),
+                $reauth['enabled'], $reauth['fresh_seconds'], $clock,
+            ]);
+            $container->register(AccountTokensController::class, AccountTokensController::class)
+                ->setPublic(true)
+                ->addTag('controller.service_arguments')
+                ->setArguments([
+                    new Reference(ApiTokenIssuerInterface::class), new Reference(ApiTokenRevokerInterface::class), new Reference(ApiTokenQueryInterface::class),
+                    new Reference(ModuleRegistry::class), new Reference(ApiTokenPolicyInterface::class), new Reference(ApiTokenSettingsProviderInterface::class),
+                    new Reference(ReachProviderInterface::class), new Reference(OwnerResolverInterface::class), new Reference(ApiTokenRateLimiterInterface::class),
+                    new Reference(ReauthSession::class), $common['forms'], $common['twig'], $common['router'],
+                    new Reference('security.token_storage'), new Reference('security.authorization_checker'), new Reference('security.csrf.token_manager'),
+                    new Reference('translator'), new Reference(RemoteDialogResponder::class),
+                    $config['token_prefix'], $reach['allow_everything'], $expiry['choices'], $expiry['default_days'], $web['layout_template'], $web['templates'], $clock,
+                ]);
+        }
+        if ($admin['enabled']) {
+            $security = $admin['security'];
+            $default  = $security['allow_unauthenticated']
+                ? new Definition(AllowAllApiTokenAccessChecker::class)
+                : (new Definition(ConfigurableApiTokenAccessChecker::class))->setArguments([new Reference('security.authorization_checker'), $security['access_roles']]);
+            $this->service($container, ApiTokenAccessCheckerInterface::class, $security['access_checker'], $default);
+            $container->register(ApiTokenAdminGuard::class, ApiTokenAdminGuard::class)->setArguments([
+                new Reference(ApiTokenAccessCheckerInterface::class), $dispatcher, new Reference('security.token_storage', ContainerInterface::NULL_ON_INVALID_REFERENCE), $security['allow_unauthenticated'],
+            ]);
+            $container->register(OperatorTokensController::class, OperatorTokensController::class)
+                ->setPublic(true)
+                ->addTag('controller.service_arguments')
+                ->setArguments([
+                    new Reference(ApiTokenQueryInterface::class), new Reference(ApiTokenRevokerInterface::class), new Reference(ApiTokenAdminGuard::class),
+                    new Reference(OwnerResolverInterface::class), new Reference(ModuleRegistry::class), $common['forms'], $common['twig'], $common['router'],
+                    $config['token_prefix'], $clock,
+                ]);
+        }
     }
 
     /**

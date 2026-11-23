@@ -1,0 +1,5 @@
+# de: constraint messages of the bundle forms (validators domain, same keys in the seven locales).
+"nowo_api_token.name.blank": "Geben Sie dem Token einen Namen."
+"nowo_api_token.name.too_long": "Verwenden Sie höchstens {{ limit }} Zeichen."
+"nowo_api_token.reach.blank": "Wählen Sie, wo das Token gilt."
+"nowo_api_token.revoke_all.confirm": "Kreuzen Sie das Feld zur Bestätigung an."

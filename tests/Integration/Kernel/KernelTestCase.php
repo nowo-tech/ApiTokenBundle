@@ -35,10 +35,10 @@ abstract class KernelTestCase extends TestCase
      * @param (Closure(ContainerConfigurator, string): void)|null $configure
      * @param list<CompilerPassInterface> $passes
      */
-    protected function bootKernel(array $config = [], ?string $databaseUrl = null, ?Closure $configure = null, bool $authRoute = false, array $passes = [], bool $whoamiRoute = false): TestKernel
+    protected function bootKernel(array $config = [], ?string $databaseUrl = null, ?Closure $configure = null, bool $authRoute = false, array $passes = [], bool $whoamiRoute = false, bool $ui = false): TestKernel
     {
         $id              = (string) preg_replace('/\W+/', '_', static::class . '_' . $this->name() . '_' . count($this->kernels));
-        $kernel          = new TestKernel($id, $config, $databaseUrl, $configure, $authRoute, $passes, $whoamiRoute);
+        $kernel          = new TestKernel($id, $config, $databaseUrl, $configure, $authRoute, $passes, $whoamiRoute, $ui);
         $this->kernels[] = $kernel;
         $kernel->boot();
 
