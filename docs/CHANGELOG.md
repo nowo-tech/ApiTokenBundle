@@ -51,7 +51,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   through a firewall listing the authenticator (`FirewallPass` passes the list).
 - Audit ZAB-S2-L3 (pre-release, no GHSA): the reset read the storage (`getToken()`) on every main request, which ran a
   pending lazy-firewall initializer and authenticated a host's `lazy: true` firewall after the controller. It no longer
-  reads the storage, and the `kernel.request` pass is gone (`kernel.finish_request` runs on the exception path too).
+  reads the storage.
+- Audit ZAB-R-L1 (pre-release, no GHSA): `kernel.finish_request` is not dispatched when
+  `framework.handle_all_throwables: false` rethrows an `\Error`, or when a host `finish_request` listener throws before
+  the reset, so the user could reach the next request of the worker. The listener also empties the storage
+  unconditionally on `kernel.request` (priority 512, main requests only, before any firewall, never reading it).
 - The window between a revocation and requests already past authentication is documented in
   [CONCURRENCY.md](CONCURRENCY.md#residual-risks) (audit ZAB-S2-I4).
 

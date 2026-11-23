@@ -66,5 +66,6 @@ Request flow: `supports()` (an `Authorization` value with the token prefix; earl
 here, no parsing) → `ApiTokenAuthenticatorInterface::authenticate()` (contract §6.2, reach filters included) → token
 bucket (and write budget) → `SelfValidatingPassport` → Symfony's passport checks (the firewall's user checker) →
 `createToken()` → `onAuthenticationSuccess()` stamps `ApiTokenContext` on the request and marks it signed in (the
-reset listener then empties the token storage on `kernel.finish_request`, whatever token a later listener put there). A failure counts against the
+reset listener then empties the token storage on `kernel.finish_request`, whatever token a later listener put there,
+and again before the next main request's firewall). A failure counts against the
 IP, dispatches `ApiTokenAuthFailedEvent` and answers per `firewall.on_failure`.

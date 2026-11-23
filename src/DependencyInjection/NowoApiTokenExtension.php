@@ -295,6 +295,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         // contexts that list the authenticator.
         $container->register(ApiTokenTokenStorageResetListener::class, ApiTokenTokenStorageResetListener::class)
             ->setArguments([new Reference(ApiTokenTokenStorageResetListener::TOKEN_STORAGE), []])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => ApiTokenTokenStorageResetListener::REQUEST_PRIORITY])
             ->addTag('kernel.event_listener', ['event' => 'kernel.finish_request', 'method' => 'onFinishRequest', 'priority' => ApiTokenTokenStorageResetListener::FINISH_PRIORITY]);
     }
 
