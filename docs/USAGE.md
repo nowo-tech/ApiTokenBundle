@@ -185,7 +185,9 @@ security:
 ```
 
 The credential is the `Authorization` header only (`Bearer <token>`, or the bare token). Query strings, cookies and
-bodies are never read. The firewall's user checker runs as usual (and the bundle checks the owner's status itself on
+bodies are never read. Only values that start with your `token_prefix` are the authenticator's business, so the
+firewall can share `custom_authenticators` with `http_basic` or a JWT authenticator: their credentials are never
+counted as failed tokens nor answered with `TOKEN_000`. The firewall's user checker runs as usual (and the bundle checks the owner's status itself on
 every request).
 
 **2. Read the principal in your controller.** `ApiTokenContext::current($request)` returns the `ApiTokenPrincipal`

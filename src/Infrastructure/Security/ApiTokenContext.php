@@ -23,6 +23,12 @@ final class ApiTokenContext
     public const RATE_LIMIT = '_nowo_api_token_rate_limit';
 
     /**
+     * Request attribute set when the bundle's firewall authenticator signed the request in: the token storage is emptied
+     * when the request finishes ({@see ApiTokenTokenStorageResetListener}). Never removed by {@see self::clear()}.
+     */
+    public const SIGNED_IN = '_nowo_api_token_signed_in';
+
+    /**
      * The principal of a request the firewall authenticated with a token, else null.
      */
     public static function current(Request $request): ?ApiTokenPrincipal
@@ -41,6 +47,23 @@ final class ApiTokenContext
         $state = $request->attributes->get(self::RATE_LIMIT);
 
         return $state instanceof RateLimitState ? $state : null;
+    }
+
+    /**
+     * Marks the request as signed in by the bundle's firewall authenticator.
+     */
+    public static function markSignedIn(Request $request): void
+    {
+        $request->attributes->set(self::SIGNED_IN, true);
+    }
+
+    /**
+     * Whether the bundle's firewall authenticator signed the request in (any value counts: a forged mark only ever
+     * empties the token storage, which fails closed).
+     */
+    public static function signedIn(Request $request): bool
+    {
+        return $request->attributes->has(self::SIGNED_IN);
     }
 
     /**

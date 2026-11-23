@@ -291,6 +291,8 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         $rate = $config['rate_limit'];
         /** @var array{on_failure: string} $firewall */
         $firewall = $config['firewall'];
+        /** @var array{beacon_v1: bool} $legacy */
+        $legacy = $config['legacy'];
 
         $container->register(ClientIpHasher::class, ClientIpHasher::class)->setArguments(['%kernel.secret%']);
         $container->register(self::ALIAS . '.rate_limit_storage', CacheStorage::class)->setArguments([new Reference($rate['cache_pool'])]);
@@ -323,11 +325,11 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         $container->register(ApiTokenFirewallAuthenticator::class, ApiTokenFirewallAuthenticator::class)->setArguments([
             new Reference(ApiTokenAuthenticatorInterface::class), new Reference(ApiTokenRateLimiterInterface::class), new Reference(TokenCodec::class),
             $dispatcher, new Reference(ClientIpHasher::class), $firewall['on_failure'], $rate['count_rest_writes'],
-        ]);
-        // Removed by FirewallPass when SecurityBundle is not enabled (no token storage).
+        ])->setArgument('$legacyBeaconV1', $legacy['beacon_v1']);
+        // Removed by FirewallPass when SecurityBundle is not enabled (no token storage); FirewallPass sets the firewall
+        // contexts that list the authenticator.
         $container->register(ApiTokenTokenStorageResetListener::class, ApiTokenTokenStorageResetListener::class)
-            ->setArguments([new Reference(ApiTokenTokenStorageResetListener::TOKEN_STORAGE)])
-            ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => ApiTokenTokenStorageResetListener::REQUEST_PRIORITY])
+            ->setArguments([new Reference(ApiTokenTokenStorageResetListener::TOKEN_STORAGE), []])
             ->addTag('kernel.event_listener', ['event' => 'kernel.finish_request', 'method' => 'onFinishRequest', 'priority' => ApiTokenTokenStorageResetListener::FINISH_PRIORITY]);
     }
 

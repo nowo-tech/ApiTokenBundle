@@ -22,14 +22,21 @@ final class FirewallPassTest extends TestCase
     public function testStatelessFirewallsAndOtherFirewallsBuild(): void
     {
         $container = $this->container();
-        $container->setParameter('security.firewalls', ['dev', 'api', 'main', 'gone', 42]);
         $container->setDefinition('security.firewall.map.config.dev', $this->firewall(false, []));
         $container->setDefinition('security.firewall.map.config.api', $this->firewall(true, ['http_basic', ApiTokenFirewallAuthenticator::class]));
         $container->setDefinition('security.firewall.map.config.main', (new Definition(stdClass::class))->setArguments([4 => false, 10 => ['form_login']]));
 
+        $container->setParameter('security.firewalls', ['dev', 'api', 'main', 'gone', 42, 'api2']);
+        $container->setDefinition('security.firewall.map.config.api2', $this->firewall(true, [ApiTokenFirewallAuthenticator::class]));
+
         (new FirewallPass())->process($container);
 
         self::assertTrue($container->hasDefinition(ApiTokenTokenStorageResetListener::class));
+        self::assertSame(
+            ['security.firewall.map.context.api', 'security.firewall.map.context.api2'],
+            $container->getDefinition(ApiTokenTokenStorageResetListener::class)->getArgument(1),
+            'the reset listener knows the firewalls that list the authenticator',
+        );
     }
 
     public function testAStatefulFirewallWithTheAuthenticatorDoesNotBuild(): void
@@ -79,7 +86,7 @@ final class FirewallPassTest extends TestCase
         $container->setParameter('nowo_api_token.rate_limit_pool', $pool);
         $container->register('cache.rate_limiter', stdClass::class);
         $container->register(ApiTokenTokenStorageResetListener::TOKEN_STORAGE, stdClass::class);
-        $container->register(ApiTokenTokenStorageResetListener::class, ApiTokenTokenStorageResetListener::class);
+        $container->register(ApiTokenTokenStorageResetListener::class, ApiTokenTokenStorageResetListener::class)->setArguments([null, []]);
 
         return $container;
     }

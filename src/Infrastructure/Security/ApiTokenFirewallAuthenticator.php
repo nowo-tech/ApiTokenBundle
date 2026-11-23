@@ -32,19 +32,24 @@ use function in_array;
 use function is_string;
 use function mb_substr;
 use function preg_replace;
+use function str_starts_with;
 
 /**
  * The Bearer authenticator for Symfony firewalls (contract §6.3). Add it to a **stateless** firewall
  * (`custom_authenticators: [Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator]`); the container
  * refuses to build when a firewall that uses it is not stateless.
  *
- * - `supports()`: an `Authorization` header is present (scheme `Bearer`, case-insensitive, or bare). No query string,
- *   cookie or body credential is ever read.
+ * - `supports()`: the `Authorization` header carries a value with the bundle's token prefix (`token_prefix`, plus `bt_`
+ *   when `legacy.beacon_v1` is on), with the scheme `Bearer` (case-insensitive) or bare. Any other value (`Basic …`, a
+ *   JWT `Bearer eyJ…`) belongs to another authenticator of the same firewall: it is not counted against the IP, raises
+ *   no event and is never answered by this authenticator (audit ZAB-S2-L1). No query string, cookie or body credential
+ *   is ever read.
  * - Before the presented value is parsed, the failed-token budget of the client IP is peeked: an IP over it is refused
  *   with no parsing and no database read.
  * - On success the per-token budget (one bucket for every module) and, with `rate_limit.count_rest_writes` on an unsafe
  *   method, the write budget are consumed. The principal and the rate limit answer are stamped on the request
- *   ({@see ApiTokenContext}) only once Symfony has accepted the passport (user checker included).
+ *   ({@see ApiTokenContext}) only once Symfony has accepted the passport (user checker included), together with the
+ *   mark that tells {@see ApiTokenTokenStorageResetListener} to empty the token storage when the request finishes.
  * - Every token failure counts against the IP and dispatches {@see ApiTokenAuthFailedEvent}; every failure kind answers
  *   the client the same way, so it never learns whether a lookup id exists. `on_failure: pass` (default) lets the
  *   request through with no user, and each API answers its own refusal; `on_failure: unauthorized` answers
@@ -78,6 +83,9 @@ final readonly class ApiTokenFirewallAuthenticator implements AuthenticatorInter
     /** Longest path stored in a failure event. */
     private const PATH_LENGTH = 200;
 
+    /** Prefix of the legacy Beacon v1 tokens (contract §9.1), accepted by `supports()` with `legacy.beacon_v1`. */
+    private const LEGACY_BEACON_PREFIX = 'bt_';
+
     /** The failures where the token exists, so the event may name its lookup id (contract §6.8). */
     private const KNOWN_TOKEN_FAILURES = [AuthFailure::WrongSecret, AuthFailure::Expired, AuthFailure::OwnerInactive];
 
@@ -88,6 +96,7 @@ final readonly class ApiTokenFirewallAuthenticator implements AuthenticatorInter
      * @param bool $countRestWrites `rate_limit.count_rest_writes`: unsafe methods also consume the write budget
      * @param ClockInterface|null $clock the rate limiter's time base for `Retry-After` (default: the system clock, which
      *                                   symfony/rate-limiter uses)
+     * @param bool $legacyBeaconV1 `legacy.beacon_v1`: values with the legacy `bt_` prefix are this authenticator's too
      */
     public function __construct(
         private ApiTokenAuthenticatorInterface $authenticator,
@@ -98,19 +107,26 @@ final readonly class ApiTokenFirewallAuthenticator implements AuthenticatorInter
         private string $onFailure = self::ON_FAILURE_PASS,
         private bool $countRestWrites = false,
         ?ClockInterface $clock = null,
+        private bool $legacyBeaconV1 = false,
     ) {
         $this->clock = $clock ?? new NativeClock();
     }
 
     /**
-     * True when the request carries an `Authorization` header. Removes any principal or rate limit attribute set
-     * earlier in the request, so only this authenticator's own answer is ever read.
+     * True when the `Authorization` header carries a value with the token prefix (`Bearer <prefix>…` or a bare
+     * `<prefix>…`); any other scheme or value is left to the firewall's other authenticators. Removes any principal or
+     * rate limit attribute set earlier in the request, so only this authenticator's own answer is ever read.
      */
     public function supports(Request $request): bool
     {
         ApiTokenContext::clear($request);
+        if (!$request->headers->has('Authorization')) {
+            return false;
+        }
+        $presented = $this->credential($request);
 
-        return $request->headers->has('Authorization');
+        return str_starts_with($presented, $this->codec->prefix())
+            || ($this->legacyBeaconV1 && str_starts_with($presented, self::LEGACY_BEACON_PREFIX));
     }
 
     /**
@@ -166,10 +182,12 @@ final readonly class ApiTokenFirewallAuthenticator implements AuthenticatorInter
     }
 
     /**
-     * Stamps the principal and the rate limit answer on the request; the request goes on.
+     * Stamps the principal and the rate limit answer on the request, and marks the request as signed in by this
+     * authenticator (whatever token a later listener puts in the storage); the request goes on.
      */
     public function onAuthenticationSuccess(Request $request, TokenInterface $token, string $firewallName): ?Response
     {
+        ApiTokenContext::markSignedIn($request);
         $principal = $token->hasAttribute(self::TOKEN_PRINCIPAL) ? $token->getAttribute(self::TOKEN_PRINCIPAL) : null;
         $state     = $token->hasAttribute(self::TOKEN_RATE_LIMIT) ? $token->getAttribute(self::TOKEN_RATE_LIMIT) : null;
         if ($principal instanceof ApiTokenPrincipal) {

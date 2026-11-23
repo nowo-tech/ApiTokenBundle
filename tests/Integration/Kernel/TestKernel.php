@@ -165,6 +165,10 @@ final class TestKernel extends Kernel
         if ($this->whoamiRoute) {
             $routes->add('api_whoami', '/api/whoami')->controller(WhoAmIController::class)->methods(['GET', 'POST']);
             $routes->add('open_whoami', '/open/whoami')->controller(WhoAmIController::class)->methods(['GET']);
+            // Never read the token storage (a lazy firewall stays unauthenticated); `/main` is for a host's own firewall.
+            $routes->add('api_echo', '/api/echo')->controller(EchoController::class)->methods(['GET']);
+            $routes->add('main_echo', '/main/echo')->controller(EchoController::class)->methods(['GET']);
+            $routes->add('main_whoami', '/main/whoami')->controller(WhoAmIController::class)->methods(['GET']);
         }
     }
 }

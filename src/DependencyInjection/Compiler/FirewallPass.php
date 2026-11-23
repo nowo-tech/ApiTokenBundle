@@ -22,7 +22,9 @@ use function sprintf;
  * - the rate limiter cache pool (`rate_limit.cache_pool`) exists: the limits are never kept in process memory;
  * - without SecurityBundle, the token storage reset listener is removed (there is no token storage to reset);
  * - every firewall that lists {@see ApiTokenFirewallAuthenticator} in `custom_authenticators` is stateless: a stateful
- *   firewall would store the token-authenticated user in a session and hand the token's holder a web session.
+ *   firewall would store the token-authenticated user in a session and hand the token's holder a web session;
+ * - the token storage reset listener receives the firewall contexts that list the authenticator, so it empties their
+ *   storage at the end of every main request without reading it first.
  */
 final class FirewallPass implements CompilerPassInterface
 {
@@ -31,6 +33,9 @@ final class FirewallPass implements CompilerPassInterface
 
     /** Position of the authenticator keys in the same definition. */
     private const ARGUMENT_AUTHENTICATORS = 10;
+
+    /** Service id prefix of SecurityBundle's firewall contexts (the value of the `_firewall_context` request attribute). */
+    private const CONTEXT_PREFIX = 'security.firewall.map.context.';
 
     /**
      * Runs the checks.
@@ -49,6 +54,7 @@ final class FirewallPass implements CompilerPassInterface
             $container->removeDefinition(ApiTokenTokenStorageResetListener::class);
         }
 
+        $contexts  = [];
         $firewalls = $container->hasParameter('security.firewalls') ? $container->getParameter('security.firewalls') : [];
         foreach (is_array($firewalls) ? $firewalls : [] as $firewall) {
             $id = 'security.firewall.map.config.' . (is_string($firewall) ? $firewall : '');
@@ -58,9 +64,16 @@ final class FirewallPass implements CompilerPassInterface
             $arguments      = $container->getDefinition($id)->getArguments();
             $authenticators = $arguments['index_' . self::ARGUMENT_AUTHENTICATORS] ?? $arguments[self::ARGUMENT_AUTHENTICATORS] ?? [];
             $stateless      = $arguments['index_' . self::ARGUMENT_STATELESS] ?? $arguments[self::ARGUMENT_STATELESS] ?? false;
-            if (is_array($authenticators) && in_array(ApiTokenFirewallAuthenticator::class, $authenticators, true) && $stateless !== true) {
+            if (!is_array($authenticators) || !in_array(ApiTokenFirewallAuthenticator::class, $authenticators, true)) {
+                continue;
+            }
+            if ($stateless !== true) {
                 throw new LogicException(sprintf('nowo_api_token: the firewall "%s" uses %s but is not stateless. Set security.firewalls.%s.stateless: true (a stateful firewall would turn a token into a web session).', $firewall, ApiTokenFirewallAuthenticator::class, $firewall));
             }
+            $contexts[] = self::CONTEXT_PREFIX . $firewall;
+        }
+        if ($container->hasDefinition(ApiTokenTokenStorageResetListener::class)) {
+            $container->getDefinition(ApiTokenTokenStorageResetListener::class)->setArgument(1, $contexts);
         }
     }
 }

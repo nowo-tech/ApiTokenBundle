@@ -65,7 +65,38 @@ final class FirewallAuthenticatorTest extends TestCase
         $this->codec     = new TokenCodec('nwt_');
     }
 
-    public function testSupportsAnyAuthorizationHeaderAndDropsEarlierStamps(): void
+    /**
+     * @return iterable<string, array{string, bool, bool}>
+     */
+    public static function headers(): iterable
+    {
+        yield 'Bearer with the prefix' => ['Bearer nwt_abc', false, true];
+        yield 'lower-case scheme' => ['bearer nwt_abc', false, true];
+        yield 'bare with the prefix' => ['nwt_abc', false, true];
+        yield 'prefix only' => ['Bearer nwt_', false, true];
+        yield 'Basic' => ['Basic dXNlcjpwYXNz', false, false];
+        yield 'JWT' => ['Bearer eyJhbGciOiJIUzI1NiJ9.e30.x', false, false];
+        yield 'empty Bearer' => ['Bearer ', false, false];
+        yield 'empty' => ['', false, false];
+        yield 'another scheme with the prefix' => ['Token nwt_abc', false, false];
+        yield 'prefix inside the value' => ['Bearer x_nwt_abc', false, false];
+        yield 'legacy prefix, legacy off' => ['Bearer bt_abc', false, false];
+        yield 'legacy prefix, legacy on' => ['Bearer bt_abc', true, true];
+        yield 'bare legacy prefix, legacy on' => ['bt_abc', true, true];
+        yield 'Basic, legacy on' => ['Basic dXNlcjpwYXNz', true, false];
+    }
+
+    #[DataProvider('headers')]
+    public function testSupportsOnlyValuesWithTheTokenPrefix(string $header, bool $legacy, bool $supported): void
+    {
+        $firewall = new ApiTokenFirewallAuthenticator($this->authenticator(), $this->limiter, $this->codec, $this->dispatcher(), new ClientIpHasher('s'), legacyBeaconV1: $legacy);
+
+        self::assertSame($supported, $firewall->supports($this->request($header)));
+        self::assertSame([], $this->limiter->calls, 'supports() never counts');
+        self::assertSame([], $this->events);
+    }
+
+    public function testSupportsDropsEarlierStamps(): void
     {
         $request = $this->request(null);
         $request->attributes->set(ApiTokenContext::PRINCIPAL, $this->principal(new InMemoryUser('alice', null)));
@@ -74,7 +105,7 @@ final class FirewallAuthenticatorTest extends TestCase
         self::assertFalse($this->firewall()->supports($request));
         self::assertNull(ApiTokenContext::current($request), 'a value set before the firewall is never trusted');
         self::assertNull(ApiTokenContext::rateLimit($request));
-        self::assertTrue($this->firewall()->supports($this->request('Basic x')));
+        self::assertTrue($this->firewall()->supports($this->request('Bearer nwt_x')));
     }
 
     /**
@@ -210,6 +241,7 @@ final class FirewallAuthenticatorTest extends TestCase
         self::assertNull($firewall->onAuthenticationSuccess($request, $token, 'api'));
 
         self::assertSame($this->answer, ApiTokenContext::current($request));
+        self::assertTrue(ApiTokenContext::signedIn($request), 'the reset listener empties the storage at the end');
         self::assertSame(RateLimitScope::Token, ApiTokenContext::rateLimit($request)?->scope);
         self::assertSame(['peek:' . self::IP, 'consume:' . $this->principal($user)->tokenId->value], $this->limiter->calls);
         self::assertSame([], $this->events);
@@ -222,6 +254,7 @@ final class FirewallAuthenticatorTest extends TestCase
         self::assertNull($this->firewall()->onAuthenticationSuccess($request, new NullToken(), 'api'));
         self::assertNull(ApiTokenContext::current($request));
         self::assertNull(ApiTokenContext::rateLimit($request));
+        self::assertTrue(ApiTokenContext::signedIn($request), 'a token replaced after creation is still marked');
     }
 
     public function testUnsafeMethodsConsumeTheWriteBudgetWhenCounted(): void
