@@ -425,7 +425,10 @@ stateless.
 ### 6.3 Firewall integration and refusals
 
 - `Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator` (Symfony `AbstractAuthenticator`):
-  - `supports()` is true when an `Authorization` header is present.
+  - `supports()` is true when the `Authorization` header carries a value with the token prefix (`Bearer <prefix>…`
+    or a bare `<prefix>…`; also `bt_` with `legacy.beacon_v1`). Another scheme or value (`Basic`, a JWT) is left to
+    the firewall's other authenticators: it is not counted against the IP, raises no event and is never answered by
+    this authenticator (audit ZAB-S2-L1).
   - On success it returns a `SelfValidatingPassport` for the resolved user and stamps the principal on the request.
   - On failure, `on_failure: pass` (default) lets the request through **with no user**. Each API answers its own
     401 / 403 / 404 in its own JSON shape (`REQ-API-002`, TaskBoard / Wiki / McpKit behaviour).

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\ApiTokenBundle\Tests\Integration\Database;
 
+use Closure;
 use LogicException;
 use Nowo\ApiTokenBundle\Application\Token\TokenCodec;
 use Nowo\ApiTokenBundle\Contract\ApiTokenIssuerInterface;
@@ -16,10 +17,12 @@ use Nowo\ApiTokenBundle\Contract\IssueRequest;
 use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\RevocationReason;
 use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator;
+use Nowo\ApiTokenBundle\Tests\Fixtures\ForeignSchemeAuthenticator;
 use Nowo\ApiTokenBundle\Tests\Fixtures\LimitingReachFilter;
 use Nowo\ApiTokenBundle\Tests\Fixtures\QueryLog;
 use Nowo\ApiTokenBundle\Tests\Fixtures\RecordingListener;
 use Nowo\ApiTokenBundle\Tests\Fixtures\Standard\ActiveUserChecker;
+use Nowo\ApiTokenBundle\Tests\Fixtures\TokenReplacingListener;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\Host;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\KernelTestCase;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\TestKernel;
@@ -30,8 +33,10 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
+use Symfony\Component\Security\Http\Event\AuthenticationTokenCreatedEvent;
 
 use function array_map;
+use function array_replace;
 use function array_unique;
 use function array_values;
 use function json_decode;
@@ -92,7 +97,7 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
             'Bearer ' . $expired->secret(),
             'Bearer ' . $revoked->secret(),
             'Bearer nwt_nope',
-            'Bearer ',
+            'Bearer ',                                // not this authenticator's (no prefix): no event
             'Basic dXNlcjpwYXNz',
         ];
         $bodies = [];
@@ -105,11 +110,11 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
 
         $events = $this->listener()->of(ApiTokenAuthFailedEvent::class);
         self::assertSame(
-            [AuthFailure::Malformed, AuthFailure::WrongSecret, AuthFailure::Expired, AuthFailure::Unknown, AuthFailure::Malformed, AuthFailure::Missing, AuthFailure::Malformed],
+            [AuthFailure::Malformed, AuthFailure::WrongSecret, AuthFailure::Expired, AuthFailure::Unknown, AuthFailure::Malformed],
             array_map(static fn (ApiTokenAuthFailedEvent $event): AuthFailure => $event->failure, $events),
         );
         self::assertSame(
-            [null, $wrong->token->lookupId->value, $expired->token->lookupId->value, null, null, null, null],
+            [null, $wrong->token->lookupId->value, $expired->token->lookupId->value, null, null],
             array_map(static fn (ApiTokenAuthFailedEvent $event): ?string => $event->lookupId?->value, $events),
         );
         foreach ($events as $event) {
@@ -117,7 +122,7 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
             self::assertFalse(str_contains($event->clientIpHash, '203'));
             self::assertSame('api_whoami', $event->path);
         }
-        self::assertSame($events[0]->clientIpHash, $events[6]->clientIpHash);
+        self::assertSame($events[0]->clientIpHash, $events[4]->clientIpHash);
     }
 
     public function testUnauthorizedModeAnswersTokenZeroForEveryKindOfFailure(): void
@@ -127,7 +132,7 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
         $this->clock()->modify('+2 days');
 
         $answers = [];
-        foreach (['Bearer ' . $expired->secret(), 'Bearer ' . $this->withSecretOf($expired), 'Bearer nwt_nope', ''] as $value) {
+        foreach (['Bearer ' . $expired->secret(), 'Bearer ' . $this->withSecretOf($expired), 'Bearer nwt_nope', 'nwt_'] as $value) {
             $response = $this->call($value);
             self::assertSame(401, $response->getStatusCode());
             self::assertSame('Bearer', $response->headers->get('WWW-Authenticate'));
@@ -208,6 +213,73 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
         self::assertSame(['host' => 'no token', 'user' => null, 'rate' => null, 'accepted' => null], $this->json($this->call(null, path: '/open/whoami')), 'a path outside the firewall');
     }
 
+    /**
+     * Audit ZAB-S2-L1: on a firewall shared with another authenticator, a `Basic` value or a JWT is never counted
+     * against the IP, raises no event and is never answered by the bundle, even with `on_failure: unauthorized`.
+     */
+    public function testForeignCredentialsOnASharedFirewallAreLeftToTheOtherAuthenticator(): void
+    {
+        $this->boot(
+            ['firewall' => ['on_failure' => 'unauthorized'], 'rate_limit' => ['failed_per_ip' => ['limit' => 3, 'interval' => '15 minutes']]],
+            ['custom_authenticators' => [ApiTokenFirewallAuthenticator::class, ForeignSchemeAuthenticator::class]],
+            static function (ContainerConfigurator $container): void {
+                $container->services()->set(ForeignSchemeAuthenticator::class);
+            },
+        );
+        $token = $this->issue('alice', 'CI');
+
+        for ($i = 0; $i < 5; ++$i) {
+            $basic = $this->call('Basic dXNlcjpwYXNz');
+            self::assertSame(['host' => 'no token', 'user' => 'basic-user', 'rate' => null, 'accepted' => null], $this->json($basic), 'the other authenticator signed it in');
+            $jwt = $this->call('Bearer eyJhbGciOiJIUzI1NiJ9.e30.c2ln');
+            self::assertSame(['host' => 'no token', 'user' => null, 'rate' => null, 'accepted' => null], $this->json($jwt), 'the host answers, not TOKEN_000');
+        }
+        self::assertSame([], $this->listener()->of(ApiTokenAuthFailedEvent::class));
+        self::assertSame(200, $this->call('Bearer ' . $token->secret())->getStatusCode(), 'the IP budget is untouched');
+        self::assertNull($this->json($this->call(null))['user'], 'the other authenticator\'s user does not outlive its request either');
+    }
+
+    /**
+     * Audit ZAB-S2-L2: a listener of AuthenticationTokenCreatedEvent (2FA) or a stateless switch_user replaces the
+     * bundle's token; the replacement still never reaches the next request of the worker.
+     */
+    public function testAReplacedTokenNeverOutlivesItsRequest(): void
+    {
+        $this->boot(services: static function (ContainerConfigurator $container): void {
+            $container->services()->set(TokenReplacingListener::class)->tag('kernel.event_listener', ['event' => AuthenticationTokenCreatedEvent::class, 'method' => 'onTokenCreated']);
+        });
+        $token = $this->issue('alice', 'CI');
+
+        self::assertSame('alice', $this->json($this->call('Bearer ' . $token->secret()))['user'], 'the replaced token signs the request in');
+        self::assertNull($this->json($this->call(null))['user'], 'no header on the API firewall');
+        self::assertSame('alice', $this->json($this->call('Bearer ' . $token->secret()))['user']);
+        self::assertNull($this->json($this->call(null, path: '/open/whoami'))['user'], 'a path outside the firewall');
+    }
+
+    /**
+     * Audit ZAB-S2-L3: Symfony makes only stateful firewalls lazy, so the token firewall itself is always eager. The
+     * reset runs on every main request, though: on the host's own `lazy: true` firewall it must never read the storage,
+     * which would authenticate that firewall after the controller.
+     */
+    public function testTheResetNeverAuthenticatesAnotherLazyFirewall(): void
+    {
+        $this->boot(services: static function (ContainerConfigurator $container): void {
+            $container->services()->set(ForeignSchemeAuthenticator::class);
+        }, otherFirewalls: ['main' => ['pattern' => '^/main', 'lazy' => true, 'custom_authenticators' => [ForeignSchemeAuthenticator::class]]]);
+        $token   = $this->issue('alice', 'CI');
+        $foreign = $this->service(ForeignSchemeAuthenticator::class);
+        self::assertInstanceOf(ForeignSchemeAuthenticator::class, $foreign);
+
+        self::assertSame(200, $this->call('Basic dXNlcjpwYXNz', path: '/main/echo')->getStatusCode());
+        self::assertSame(0, $foreign->runs, 'the lazy firewall was not authenticated after the controller');
+        self::assertSame('basic-user', $this->json($this->call('Basic dXNlcjpwYXNz', path: '/main/whoami'))['user'], 'reading the storage authenticates');
+        self::assertSame(1, $foreign->runs);
+        self::assertSame('alice', $this->json($this->call('Bearer ' . $token->secret()))['user']);
+        self::assertNull($this->json($this->call(null, path: '/open/whoami'))['user']);
+        self::assertSame(200, $this->call(null, path: '/main/echo')->getStatusCode());
+        self::assertSame(1, $foreign->runs);
+    }
+
     public function testAStatefulFirewallWithTheAuthenticatorDoesNotBuild(): void
     {
         $host = $this->host();
@@ -219,14 +291,20 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
 
     /**
      * @param array<string, mixed> $config
+     * @param array<string, mixed> $firewall keys replaced in the `api` firewall
+     * @param (Closure(ContainerConfigurator): void)|null $services extra host services
+     * @param array<string, array<string, mixed>> $otherFirewalls more host firewalls after `api`
      */
-    protected function boot(array $config = []): void
+    protected function boot(array $config = [], array $firewall = [], ?Closure $services = null, array $otherFirewalls = []): void
     {
         $host      = $this->host();
-        $base      = $host->configure($this->firewall(true));
-        $configure = static function (ContainerConfigurator $container, string $url) use ($base): void {
+        $base      = $host->configure(array_replace($this->firewall(true), $firewall), $otherFirewalls);
+        $configure = static function (ContainerConfigurator $container, string $url) use ($base, $services): void {
             $base($container, $url);
             $container->services()->set(LimitingReachFilter::class)->tag('nowo_api_token.reach_filter');
+            if ($services instanceof Closure) {
+                $services($container);
+            }
         };
         $this->kernel = $this->bootKernel($host->bundleConfig($config), Host::databaseUrl(), $configure, whoamiRoute: true);
         $host->resetSchema($this->kernel);

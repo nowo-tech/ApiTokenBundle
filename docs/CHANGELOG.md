@@ -30,12 +30,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
     through `ReachFilterChain`, which intersects every answer with the reach it was given.
   - Build checks (`FirewallPass`): the cache pool must exist; a firewall that lists the authenticator must be
     stateless.
-  - Worker mode: `ApiTokenTokenStorageResetListener` removes the bundle's own security token from the token storage at
-    the end of each main request and before the next one (Symfony only clears it through the services resetter, so
-    with the kernel kept alive and not reset a request without a token would otherwise run as the previous request's
-    user). Worker test through the firewall (2,000 requests).
+  - Worker mode: `ApiTokenTokenStorageResetListener` empties the token storage at the end of each main request the
+    authenticator signed in or that went through a firewall listing it (Symfony only clears it through the services
+    resetter, so with the kernel kept alive and not reset a request without a token would otherwise run as the
+    previous request's user). Worker tests through the firewall (2,000 + 500 requests).
   - Firewall functional suite for the standard and the DDD host; host-API integration guide in
     [USAGE.md](USAGE.md#protecting-your-own-api).
+
+### Security
+
+- Audit ZAB-S2-L1 (pre-release, no GHSA): `ApiTokenFirewallAuthenticator::supports()` claimed every `Authorization`
+  header. On a firewall shared with `http_basic` or a JWT authenticator, each foreign credential counted as a failed
+  token for the IP (locking out valid tokens from that IP after 20) and raised `ApiTokenAuthFailedEvent`, and
+  `on_failure: unauthorized` answered `401 TOKEN_000` before the other authenticator ran. It now supports only values
+  with the token prefix (`Bearer <prefix>…` or bare; also `bt_` with `legacy.beacon_v1`). `TokenCodec::prefix()`.
+- Audit ZAB-S2-L2 (pre-release, no GHSA): the worker-mode reset removed a token only while it still carried the
+  bundle's attribute, so a token replaced after creation (an `AuthenticationTokenCreatedEvent` listener such as a 2FA
+  bundle, or a stateless `switch_user`) survived into the next request of the worker. The authenticator now marks the
+  request (`ApiTokenContext::SIGNED_IN`) and the listener empties the storage for a marked request or one that went
+  through a firewall listing the authenticator (`FirewallPass` passes the list).
+- Audit ZAB-S2-L3 (pre-release, no GHSA): the reset read the storage (`getToken()`) on every main request, which ran a
+  pending lazy-firewall initializer and authenticated a host's `lazy: true` firewall after the controller. It no longer
+  reads the storage, and the `kernel.request` pass is gone (`kernel.finish_request` runs on the exception path too).
+- The window between a revocation and requests already past authentication is documented in
+  [CONCURRENCY.md](CONCURRENCY.md#residual-risks) (audit ZAB-S2-I4).
 
 ### Changed
 
