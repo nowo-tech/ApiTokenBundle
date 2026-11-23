@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-baseline`
 **Created**: 2026-11-12
-**Status**: Baseline (S0 scaffold + S1 core, audit LW fixes)
+**Status**: Baseline (S0 scaffold + S1 core, audit LW fixes, 0.2.0 concurrency, S2 firewall + limits)
 **Input**: Contract 221-A ([`docs/CONTRACT.md`](../../docs/CONTRACT.md)), owner-approved 2026-11-12 with every Q-O
 answered as recommended; S1 security audit LW (2026-11-11).
 
@@ -118,6 +118,17 @@ DBAL only and their listeners and events run after the outermost commit; no stat
 | FR-QUERY-001 | Owner lists newest first and capped; operator keyset pages; every owner-scoped result re-checked with `===`. |
 | FR-GRANT-001 | Module registry from config and tagged providers; stored grants re-validated on read, unknown modules or levels dropped; canonical module-key order. |
 | FR-EVENT-001 | Issued, revoked and used events carry ids and value objects only and are dispatched after the outermost commit (dropped on rollback). |
+| FR-EVENT-002 | `ApiTokenAuthFailedEvent` on every firewall token failure: failure kind, lookup id only for `WrongSecret` / `Expired` / `OwnerInactive`, a 16-hex HMAC of the client IP, the route name (never the query); never the presented value or a raw IP. |
+| FR-CONC-001 | Lock conflicts of token writes are replayed when the store opened the unit, then answered 409 (or 503) with `CONFLICT_001` / `CONFLICT_002`; the live-token cap holds under concurrent issues through the owner lock row. |
+
+### Firewall and rate limits (S2)
+
+| ID | Requirement |
+| --- | --- |
+| FR-FIREWALL-001 | `ApiTokenFirewallAuthenticator` reads the `Authorization` header only (`Bearer`, case-insensitive, or bare); a passport for the token's user; the principal and rate limit answer stamped on the request only after Symfony accepted the passport, earlier stamps removed; every failure kind answered identically (`pass`: no user; `unauthorized`: `401 TOKEN_000` + `WWW-Authenticate: Bearer`); a used-up budget answers `429 TOKEN_001` + `Retry-After` in `unauthorized` mode. |
+| FR-FIREWALL-002 | The container refuses to build when a firewall that lists the authenticator is not stateless. |
+| FR-RATE-001 | One bucket per token for every module, a write budget (unsafe methods with `count_rest_writes`), failed tokens per client IP peeked before parsing and counted on every failure; counters in `rate_limit.cache_pool` (required), IP keyed by HMAC with `kernel.secret`, nothing in process memory. |
+| FR-REACH-001 | `ReachFilterInterface` services run in the authenticator's step 8; each answer is intersected with the reach it was given, so a filter never widens. |
 
 ### Owner (host integration)
 
@@ -145,6 +156,7 @@ DBAL only and their listeners and events run after the outermost commit; no stat
 | ID | Requirement |
 | --- | --- |
 | FR-WORKER-001 | One kernel kept alive (no reset) serves N requests with no bleed between owners, flat memory, and a deactivation by SQL refused on the next request. |
+| FR-WORKER-002 | Through the firewall, the bundle's security token never outlives its main request (removed on `kernel.finish_request` and `kernel.request`), so a later request without a token, or outside the firewall, has no user. |
 | FR-I18N-001 | Seven translation catalogues with the same keys (en, es, it, fr, pt, de, nl); host override procedure documented. |
 
 ## Key entities
@@ -168,13 +180,15 @@ DBAL only and their listeners and events run after the outermost commit; no stat
 | SC-004 | The worker test serves 2,000 requests in one kernel with no cross-owner data, ≤ 1 MiB memory drift, and refuses an owner deactivated by SQL on the next request. |
 | SC-005 | [`code-inventory.md`](code-inventory.md) maps **every** file of `src/` (**75** files at this baseline; the count is re-stated there on each slice) to its `FR-*` IDs, with no `FR-SRC-001` placeholder. |
 | SC-006 | The S1 REQ-SEC-004 audit (and its delta re-audit) passes before the 0.1.0 tag. |
+| SC-007 | The S2 REQ-SEC-004 audit passes before the 0.3.0 tag; the firewall suite runs on both host kinds and every CI database. |
 
 ## Non-goals
 
 - OAuth 2 flows, refresh tokens, client credentials, device flow (TimeTrack keeps its own).
 - Organisation / project / machine tokens (Q-O7) and HMAC request signing.
 - Deciding what a module allows: every API re-checks the person's permissions; a token only narrows them.
-- In S1: HTTP firewall, rate limits, pages, bridges and the public API (S2–S5).
+- In S1: HTTP firewall, rate limits, pages, bridges and the public API (S2–S5). In S2: pages, the issue-per-owner and
+  re-auth limits (S3), bridges (S4) and the public API (S5).
 
 ## Assumptions
 

@@ -126,5 +126,12 @@ nowo_api_token:
 - **Last used.** The *last used* write is best effort by contract (§6.2 step 9): a lock conflict or any other failure
   is logged and the authentication still succeeds. It is its own autocommit statement outside any transaction, so
   nothing else is rolled back; the next authenticated call retries it. This is the one documented exception to rule 8.
+- **Revocation versus an in-flight request.** Authentication reads the token row once, at the start of the request
+  (contract §6.2); nothing re-checks it later. A request that passed that read just before a revocation (or a
+  `revokeAll()`, an owner erasure or the purge) committed runs to completion with the token's grants, and its *last
+  used* update then matches 0 rows. The window is one request per worker that was already past authentication, never
+  longer than that request: every request that starts after the commit is refused. Long-running work started from such
+  a request (a queued message, a stream) must re-check what it needs itself. The per-token budget is per token, so an
+  owner can spend up to `max_per_owner` × the per-token budget; this is the contract's design (audit ZAB-S2-I4).
 - **Owner lock rows are never deleted.** One small row per owner that ever issued a token; deleting it on the last
   revocation would race with a concurrent issue.

@@ -9,6 +9,8 @@ use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\ApiTokenBundle\NowoApiTokenBundle;
 use Nowo\ApiTokenBundle\Tests\Fixtures\AuthEchoController;
 use Nowo\ApiTokenBundle\Tests\Fixtures\EchoController;
+use Nowo\ApiTokenBundle\Tests\Fixtures\ThrowingController;
+use Nowo\ApiTokenBundle\Tests\Fixtures\WhoAmIController;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -16,6 +18,7 @@ use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ReferenceConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
@@ -25,7 +28,8 @@ use function sys_get_temp_dir;
 /**
  * Standard-host kernel of the integration tests: FrameworkBundle, SecurityBundle, the bundle and, on demand, DoctrineBundle (DBAL
  * only, or what `$configure` sets up: ORM, host fixtures). `/echo` answers the request's `X-Test-Owner` header and the
- * bundle's API prefix parameter; `/auth` (with `$authRoute`) authenticates the Authorization header.
+ * bundle's API prefix parameter; `/auth` (with `$authRoute`) authenticates the Authorization header; `/api/whoami` and `/open/whoami` (with
+ * `$whoamiRoute`) answer what the S2 firewall stamped and who the token storage holds.
  */
 final class TestKernel extends Kernel
 {
@@ -44,6 +48,7 @@ final class TestKernel extends Kernel
         private readonly bool $authRoute = false,
         /** @var list<CompilerPassInterface> host compiler passes (e.g. UserKit's account-status wiring) */
         private readonly array $passes = [],
+        private readonly bool $whoamiRoute = false,
     ) {
         parent::__construct('test', false);
     }
@@ -111,6 +116,14 @@ final class TestKernel extends Kernel
             ->arg('$apiPrefix', '%nowo_api_token.api_prefix%')
             ->public()
             ->tag('controller.service_arguments');
+        if ($this->whoamiRoute) {
+            $container->services()
+                ->set(WhoAmIController::class)
+                ->arg('$tokenStorage', new ReferenceConfigurator('security.token_storage'))
+                ->public()
+                ->tag('controller.service_arguments');
+            $container->services()->set(ThrowingController::class)->public()->tag('controller.service_arguments');
+        }
         if ($this->authRoute) {
             $container->services()
                 ->set(AuthEchoController::class)
@@ -125,6 +138,15 @@ final class TestKernel extends Kernel
         $routes->add('echo', '/echo')->controller(EchoController::class)->methods(['GET']);
         if ($this->authRoute) {
             $routes->add('auth', '/auth')->controller(AuthEchoController::class)->methods(['GET']);
+        }
+        if ($this->whoamiRoute) {
+            $routes->add('api_whoami', '/api/whoami')->controller(WhoAmIController::class)->methods(['GET', 'POST']);
+            $routes->add('open_whoami', '/open/whoami')->controller(WhoAmIController::class)->methods(['GET']);
+            // Never read the token storage (a lazy firewall stays unauthenticated); `/main` is for a host's own firewall.
+            $routes->add('api_echo', '/api/echo')->controller(EchoController::class)->methods(['GET']);
+            $routes->add('main_echo', '/main/echo')->controller(EchoController::class)->methods(['GET']);
+            $routes->add('main_whoami', '/main/whoami')->controller(WhoAmIController::class)->methods(['GET']);
+            $routes->add('api_error', '/api/error')->controller(ThrowingController::class)->methods(['GET']);
         }
     }
 }

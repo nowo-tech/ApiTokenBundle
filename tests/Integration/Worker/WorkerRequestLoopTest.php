@@ -14,6 +14,10 @@ use Nowo\ApiTokenBundle\Contract\IssueRequest;
 use Nowo\ApiTokenBundle\Contract\Reach;
 use Nowo\ApiTokenBundle\Contract\RevocationReason;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitQueue;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator;
+use Nowo\ApiTokenBundle\Tests\Fixtures\ForeignSchemeAuthenticator;
+use Nowo\ApiTokenBundle\Tests\Fixtures\Standard\ActiveUserChecker;
+use Nowo\ApiTokenBundle\Tests\Fixtures\TokenReplacingListener;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\Host;
 use Nowo\ApiTokenBundle\Tests\Integration\Kernel\KernelTestCase;
 use stdClass;
@@ -24,6 +28,7 @@ use Symfony\Component\Console\Event\ConsoleTerminateEvent;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -31,6 +36,7 @@ use Symfony\Component\HttpKernel\Event\FinishRequestEvent;
 use Symfony\Component\HttpKernel\Event\TerminateEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
+use Symfony\Component\Security\Http\Event\AuthenticationTokenCreatedEvent;
 use Symfony\Contracts\Service\ResetInterface;
 
 use function gc_collect_cycles;
@@ -122,6 +128,148 @@ final class WorkerRequestLoopTest extends KernelTestCase
         gc_collect_cycles();
 
         self::assertLessThan(1024 * 1024, memory_get_usage() - $baseline, 'memory stays flat over ' . self::REQUESTS . ' requests');
+    }
+
+    /**
+     * The same loop through the S2 firewall (`custom_authenticators` on a stateless `^/api` firewall): each request sees
+     * only its own principal and its own security user; a refused request, a request without a header and a request
+     * outside the firewall carry neither (the token storage is not reset by Symfony in this mode); memory stays flat.
+     */
+    public function testTheFirewallNeverCarriesAUserOrPrincipalIntoTheNextRequest(): void
+    {
+        $host     = Host::standard();
+        $firewall = ['pattern' => '^/api', 'stateless' => true, 'provider' => 'users', 'user_checker' => ActiveUserChecker::class, 'custom_authenticators' => [ApiTokenFirewallAuthenticator::class]];
+        $limits   = ['rate_limit' => ['per_token' => ['limit' => 100000, 'interval' => '1 minute'], 'failed_per_ip' => ['limit' => 100000, 'interval' => '1 minute']]];
+        $kernel   = $this->bootKernel($host->bundleConfig($limits), Host::databaseUrl(), $host->configure($firewall), whoamiRoute: true);
+        $host->resetSchema($kernel);
+        $host->createUser($kernel, 'alice');
+        $host->createUser($kernel, 'bob');
+        $container = $kernel->getContainer()->get('test.service_container');
+        self::assertInstanceOf(ContainerInterface::class, $container);
+        $issuer  = $container->get(ApiTokenIssuerInterface::class);
+        $revoker = $container->get(ApiTokenRevokerInterface::class);
+        $http    = $kernel->getContainer()->get('http_kernel');
+        self::assertInstanceOf(ApiTokenIssuerInterface::class, $issuer);
+        self::assertInstanceOf(ApiTokenRevokerInterface::class, $revoker);
+        self::assertInstanceOf(HttpKernelInterface::class, $http);
+        self::assertInstanceOf(TerminableInterface::class, $http);
+        $issue = static fn (string $owner, string $name): IssuedToken => $issuer->issue(new IssueRequest($host->owner($owner), $name, new Grants(['tasks' => 'read']), Reach::everything(), 30));
+        $a1    = $issue('alice', 'a1');
+        $a2    = $issue('alice', 'a2');
+        $b1    = $issue('bob', 'b1');
+        $wrong = substr($b1->secret(), 0, 20) . ($b1->secret()[20] === 'a' ? 'b' : 'a') . substr($b1->secret(), 21);
+        $none  = ['host' => 'no token', 'user' => null, 'rate' => null, 'accepted' => null];
+        $cases = [
+            ['/api/whoami', 'Bearer ' . $a1->secret(), $a1->token->id->value, 'alice'],
+            ['/api/whoami', 'Bearer ' . $wrong, null, null],
+            ['/api/whoami', 'Bearer ' . $b1->secret(), $b1->token->id->value, 'bob'],
+            ['/api/whoami', null, null, null],
+            ['/api/whoami', 'Bearer ' . $a2->secret(), $a2->token->id->value, 'alice'],
+            ['/open/whoami', null, null, null],
+        ];
+
+        $baseline = 0;
+        for ($i = 0; $i < self::REQUESTS; ++$i) {
+            if ($i === 1000) {
+                self::assertTrue($revoker->revoke($host->owner('alice'), $a2->token->id, RevocationReason::Owner));
+                $cases[4] = ['/api/whoami', 'Bearer ' . $a2->secret(), null, null];
+            }
+            [$path, $authorization, $tokenId, $user] = $cases[$i % 6];
+            $server                                  = ['REMOTE_ADDR' => '203.0.113.9'];
+            if ($authorization !== null) {
+                $server['HTTP_AUTHORIZATION'] = $authorization;
+            }
+            $request  = Request::create($path, 'GET', server: $server);
+            $response = $http->handle($request, HttpKernelInterface::MAIN_REQUEST, false);
+            $http->terminate($request, $response);
+            $body = json_decode((string) $response->getContent(), true, 8, JSON_THROW_ON_ERROR);
+            self::assertIsArray($body);
+
+            if ($tokenId === null) {
+                self::assertSame(401, $response->getStatusCode(), 'request ' . $i);
+                self::assertSame($none, $body, 'request ' . $i . ' carries no principal and no user');
+            } else {
+                self::assertSame(200, $response->getStatusCode(), 'request ' . $i);
+                self::assertSame($tokenId, $body['token'], 'request ' . $i . ' sees only its own principal');
+                self::assertSame($user, $body['user'], 'request ' . $i . ' sees only its own user');
+            }
+
+            if ($i === 100) {
+                gc_collect_cycles();
+                $baseline = memory_get_usage();
+            }
+        }
+        gc_collect_cycles();
+
+        self::assertLessThan(1024 * 1024, memory_get_usage() - $baseline, 'memory stays flat over ' . self::REQUESTS . ' firewall requests');
+    }
+
+    /**
+     * Audit ZAB-S2-L1/L2/L3 in the worker loop: a token firewall shared with another authenticator, a listener that
+     * replaces the bundle's token after its creation (2FA, stateless switch_user) and the host's own stateful `lazy: true`
+     * firewall. Requests that never read the storage, requests signed in by the other authenticator and replaced tokens
+     * alternate with requests without a header; none of them ever sees an earlier request's user, and the lazy firewall
+     * is only ever authenticated by a read.
+     */
+    public function testALazySharedFirewallWithAReplacedTokenNeverCarriesAUserIntoTheNextRequest(): void
+    {
+        $host     = Host::standard();
+        $firewall = ['pattern' => '^/api', 'stateless' => true, 'provider' => 'users', 'user_checker' => ActiveUserChecker::class, 'custom_authenticators' => [ApiTokenFirewallAuthenticator::class, ForeignSchemeAuthenticator::class]];
+        $limits   = ['rate_limit' => ['per_token' => ['limit' => 100000, 'interval' => '1 minute'], 'failed_per_ip' => ['limit' => 3, 'interval' => '1 minute']]];
+        $base     = $host->configure($firewall, ['main' => ['pattern' => '^/main', 'lazy' => true, 'custom_authenticators' => [ForeignSchemeAuthenticator::class]]]);
+        $kernel   = $this->bootKernel($host->bundleConfig($limits), Host::databaseUrl(), static function (ContainerConfigurator $container, string $url) use ($base): void {
+            $base($container, $url);
+            $container->services()->set(ForeignSchemeAuthenticator::class);
+            $container->services()->set(TokenReplacingListener::class)->tag('kernel.event_listener', ['event' => AuthenticationTokenCreatedEvent::class, 'method' => 'onTokenCreated']);
+        }, whoamiRoute: true);
+        $host->resetSchema($kernel);
+        $host->createUser($kernel, 'alice');
+        $container = $kernel->getContainer()->get('test.service_container');
+        self::assertInstanceOf(ContainerInterface::class, $container);
+        $issuer = $container->get(ApiTokenIssuerInterface::class);
+        $http   = $kernel->getContainer()->get('http_kernel');
+        self::assertInstanceOf(ApiTokenIssuerInterface::class, $issuer);
+        self::assertInstanceOf(HttpKernelInterface::class, $http);
+        self::assertInstanceOf(TerminableInterface::class, $http);
+        $secret = $issuer->issue(new IssueRequest($host->owner('alice'), 'a1', new Grants(['tasks' => 'read']), Reach::everything(), 30))->secret();
+        $cases  = [
+            ['/api/whoami', 'Bearer ' . $secret, 'alice'],          // replaced token
+            ['/api/whoami', null, null],
+            ['/api/echo', 'Bearer ' . $secret, false],              // the storage is never read
+            ['/open/whoami', null, null],
+            ['/main/echo', 'Basic dXNlcjpwYXNz', false],            // lazy, never read: never authenticated
+            ['/main/whoami', null, null],
+            ['/main/whoami', 'Basic dXNlcjpwYXNz', 'basic-user'],
+            ['/api/whoami', 'Basic dXNlcjpwYXNz', 'basic-user'],    // the other authenticator
+            ['/api/whoami', null, null],
+            ['/api/whoami', 'Bearer eyJhbGciOiJIUzI1NiJ9.e30.c2ln', null],
+            ['/open/whoami', null, null],
+        ];
+
+        $reads = 0;
+        for ($i = 0; $i < self::REQUESTS / 4; ++$i) {
+            [$path, $authorization, $user] = $cases[$i % 11];
+            if ($user === 'basic-user') {
+                ++$reads;
+            }
+            $server = ['REMOTE_ADDR' => '203.0.113.9'];
+            if ($authorization !== null) {
+                $server['HTTP_AUTHORIZATION'] = $authorization;
+            }
+            $request  = Request::create($path, 'GET', server: $server);
+            $response = $http->handle($request, HttpKernelInterface::MAIN_REQUEST, false);
+            $http->terminate($request, $response);
+            $body = json_decode((string) $response->getContent(), true, 8, JSON_THROW_ON_ERROR);
+            self::assertIsArray($body);
+            if ($user === false) {
+                self::assertSame(200, $response->getStatusCode(), 'request ' . $i);
+                continue;
+            }
+            self::assertSame($user, $body['user'], 'request ' . $i . ' sees only its own user');
+        }
+        $foreign = $container->get(ForeignSchemeAuthenticator::class);
+        self::assertInstanceOf(ForeignSchemeAuthenticator::class, $foreign);
+        self::assertSame($reads, $foreign->runs, 'only the Basic requests that read the storage ran it');
     }
 
     /**

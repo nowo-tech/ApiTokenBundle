@@ -17,9 +17,10 @@
 
 ## Status and scope
 
-S1 core (first tag 0.1.0 after its REQ-SEC-004 audit): the store, the token format, the hash at rest, the issuer,
-revoker, query and authenticator services and two console commands. No route and no firewall authenticator yet (S2):
-nothing is reachable over HTTP, and nothing is registered while `enabled` is false.
+S1 core (0.1.0) and S2 firewall + limits (0.3.0 after its REQ-SEC-004 audit): the store, the token format, the hash at
+rest, the issuer, revoker, query and authenticator services, two console commands, the stateless firewall
+authenticator and the rate limits. The bundle registers **no route**: a token is accepted only on the host's own
+firewalls that list the authenticator, and nothing is registered while `enabled` is false.
 
 **Covers:** how tokens are generated, stored, verified, listed and revoked, and how the owner's account status gates
 every use. **Does not cover:** what a module allows (each API keeps checking the person's own permissions; a token only
@@ -29,13 +30,14 @@ narrows them), the host's sign-in, sessions or user provider, and transport secu
 
 | Input | Where | Handling |
 | --- | --- | --- |
-| Presented token (string) | `ApiTokenAuthenticatorInterface::authenticate()` (S2: the `Authorization` header) | Length ≤ 128 and an anchored regex before anything else; checksum checked before any I/O; never logged, never in an exception message (`#[\SensitiveParameter]`) |
+| Presented token (string) | `ApiTokenAuthenticatorInterface::authenticate()`; over HTTP the `Authorization` header only (`Bearer` or bare), never a query string, cookie or body | Length ≤ 128 and an anchored regex before anything else; checksum checked before any I/O; never logged, never in an exception message (`#[\SensitiveParameter]`) |
 | Issue request | `ApiTokenIssuerInterface::issue()` (S3 form, CLI, host code) | Name (1–80 chars, no control characters), channel, grants (module registry, policy, module switches), reach (subset of the owner's choices, ≤ `reach.max_entries`), expiry (1 … min(config, policy, 365) days), owner must exist and be active |
 | Value objects | `OwnerRef`, `TokenId`, `LookupId`, `Grants`, `Reach` | Validated on construction; messages state the pattern, never the value |
 | Configuration | `nowo_api_token` tree | Strict (unknown keys refused), validated values (prefix, table prefix, module keys, limits) |
 | CLI arguments | `nowo:api-token:issue` (owner id, name, grants, reach, days), `nowo:api-token:purge-expired` | Same validation as the issuer; the secret is generated, never read from argv |
 | Database rows | `<prefix>api_token` | Re-validated on read: a damaged row is skipped (never authenticates), stored grants are narrowed by the registry, a damaged reach reaches nothing |
-| Host SPIs | owner resolver / status, reach provider, policy, settings, revocation listeners | Host code; the bundle fails closed on null or inactive answers, and a failing revocation listener never undoes a revocation |
+| Client IP | `Request::getClientIp()` (trusted proxies are the host's configuration) | Keyed by HMAC-SHA256 with `kernel.secret` in the limiter cache and in events; never stored or logged in clear |
+| Host SPIs | owner resolver / status, reach provider, reach filters, policy, settings, revocation listeners | Host code; the bundle fails closed on null or inactive answers, and a failing revocation listener never undoes a revocation |
 
 ## Threat model
 
@@ -45,14 +47,20 @@ From contract §6.11. Each threat names the control that answers it and the slic
 | --- | --- | --- |
 | Token leak in logs, CI, serialisation or exceptions | Secret only in `IssuedToken` (private, `secret()` accessor; `json_encode` redacted, `serialize()` refused, `var_export` / `(array)` / VarDumper / `print_r` never show it), `#[\SensitiveParameter]`, no secret in flash / session / log / event / cache; exception messages never include the presented value | S1, S3 |
 | Database read leak | SHA-256 of the full token at rest (256-bit secret), optional HMAC pepper | S1 |
-| Lookup-id enumeration | `Unknown` and `WrongSecret` answer the client identically | S1, S2 |
+| Lookup-id enumeration | Every failure kind (unknown, wrong secret, expired, revoked, owner inactive, module off, malformed, missing) answers the client identically (`pass`: no user; `unauthorized`: one fixed `401 TOKEN_000` body); the failure kind goes to the event only, and the lookup id only for tokens that exist | S1, S2 |
 | Timing | `hash_equals()` always, a dummy hash on a miss, never a SQL comparison of the hash | S1 |
-| Brute force | Failed tokens per client IP (20 / 15 min), 2^256 secrets | S2 |
+| Brute force | Failed tokens per client IP (20 / 15 min), peeked before parsing (a blocked IP costs no database read and is refused even with a valid token), 2^256 secrets | S2 |
+| Budget doubling across APIs | One bucket per token consumed once per request by the firewall, for every module; bridges read the request's answer instead of consuming again | S2, S4 |
+| Session fixation through a token | The container refuses to build when a firewall that lists the authenticator is not stateless, so a token never becomes a web session | S2 |
+| Forged request stamp | `ApiTokenContext` is written only by the authenticator, after Symfony accepted the passport; any earlier `_nowo_api_token*` attribute is removed in `supports()` and on failure | S2 |
+| Reach widening by a host filter | Each `ReachFilterInterface` answer is intersected with the reach it was given | S2 |
 | Clickjacking of the create page | `X-Frame-Options: DENY`, `frame-ancestors 'none'` appended to the host CSP | S3 |
 | CSRF on revoke | FormKit CSRF forms on every session POST; the Bearer API is exempt (stateless) | S3 |
 | Privilege growth | Grants re-validated against the registry on read; unknown levels dropped, never widened; every API re-checks the person's permissions | S1, S4 |
 | Collation (audit LQ) | `owner_id` in `utf8mb4_bin`, PHP `OwnerRef::equals()` re-check on every access / erasure query | S1 |
-| Worker-mode bleed between two tokens | Principal only on the request attribute; no memo of tokens, owners or reach; N-request test | S1, S2 |
+| Worker-mode bleed between two tokens | Principal only on the request attribute; no memo of tokens, owners or reach; the token storage emptied at the end of every main request the authenticator signed in (also when a 2FA listener or a stateless `switch_user` replaced its token) or that went through a firewall listing it, without reading it first (a host's lazy firewall is never authenticated late); N-request tests direct and through the firewall | S1, S2 |
+| Foreign credentials on a shared firewall | `supports()` only claims values with the token prefix: `Basic` or JWT values of another authenticator are never counted against the IP budget, never raise `ApiTokenAuthFailedEvent` and never get `TOKEN_000` | S2 |
+| Revocation and in-flight requests | A request authenticated just before a revocation commits still completes; see [CONCURRENCY.md](CONCURRENCY.md#residual-risks) | S2 |
 | Account disabled, locked or erased | Owner status checked on every request with the host's own user checker (every firewall's checker, or `owner.user_checker`), the user re-read from the database each time (no identity-map staleness in worker mode), no cache | S1 |
 | Dangling token for a missing owner | Issue refuses an owner that does not exist or is inactive (`ApiTokenIssueRefusedException::OWNER`) | S1 |
 | Injection | Every SQL value is a bound parameter; the table name comes from a validated prefix; column lists are constants | S1 |
@@ -103,11 +111,14 @@ class). A damaged row is logged with the validation message, which names the pat
 
 Never logged: the secret, the presented value, the hash, the pepper, reach entries, raw IP addresses.
 
+`ApiTokenAuthFailedEvent` carries the failure kind, the lookup id only when the token exists (`WrongSecret`,
+`Expired`, `OwnerInactive`), a 16-character HMAC of the client IP and the route name (never the query string).
+
 ## Permissions and exposure
 
 - S1 exposes **no HTTP endpoint and no controller**. The services are public container ids for host code; the two
   console commands need shell access to the host (break-glass by design).
-- S2 adds the firewall authenticator (stateless firewalls only, refused at build otherwise); S3 the account page
+- S2 adds the firewall authenticator (stateless firewalls only, refused at build otherwise) and no route; S3 the account page
   (`IS_AUTHENTICATED_FULLY` plus re-authentication) and the operator page (`ROLE_ADMIN` by default); S5 the versioned
   `<prefix>/tokens/v1/*` API, Bearer only.
 
@@ -119,7 +130,11 @@ Never logged: the secret, the presented value, the hash, the pepper, reach entri
   transactions.
 - `max_per_owner` live tokens (default 20); the purge runs in keyset batches with a time budget
   (`messenger.max_seconds`).
-- S2 adds the per-token, write and failed-IP rate limits; S3 the issue-per-owner limit.
+- Rate limits (S2), fixed windows in `rate_limit.cache_pool`: 100 requests per token per minute for every module,
+  30 writes per token per minute (unsafe methods with `count_rest_writes`, McpKit tools in S4), 20 failed tokens per
+  client IP per 15 minutes. No lock: exactly concurrent requests can over-admit by at most the number of workers. The
+  pool must be shared by every worker and server; behind a proxy, `framework.trusted_proxies` must be set, or every
+  client shares the proxy's IP budget (one client could then block the others). S3 adds the issue-per-owner limit.
 
 ## Dependencies and updates
 

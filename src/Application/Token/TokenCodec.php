@@ -54,6 +54,14 @@ final readonly class TokenCodec
     }
 
     /**
+     * The configured token prefix (`token_prefix`).
+     */
+    public function prefix(): string
+    {
+        return $this->prefix;
+    }
+
+    /**
      * A new random token.
      */
     public function generate(): GeneratedToken

@@ -13,6 +13,7 @@ use Nowo\ApiTokenBundle\Application\Service\ApiTokenAuthenticator;
 use Nowo\ApiTokenBundle\Application\Service\ApiTokenIssuer;
 use Nowo\ApiTokenBundle\Application\Service\ApiTokenQuery;
 use Nowo\ApiTokenBundle\Application\Service\ApiTokenRevoker;
+use Nowo\ApiTokenBundle\Application\Service\ReachFilterChain;
 use Nowo\ApiTokenBundle\Application\Token\TokenCodec;
 use Nowo\ApiTokenBundle\Application\Token\TokenHasher;
 use Nowo\ApiTokenBundle\Application\Token\TokenHasherInterface;
@@ -20,12 +21,14 @@ use Nowo\ApiTokenBundle\Contract\ApiTokenAuthenticatorInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenIssuerInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenPolicyInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenQueryInterface;
+use Nowo\ApiTokenBundle\Contract\ApiTokenRateLimiterInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenRevokerInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenSettingsProviderInterface;
 use Nowo\ApiTokenBundle\Contract\ModuleDefinitionProviderInterface;
 use Nowo\ApiTokenBundle\Contract\ModuleRegistry;
 use Nowo\ApiTokenBundle\Contract\OwnerResolverInterface;
 use Nowo\ApiTokenBundle\Contract\OwnerStatusInterface;
+use Nowo\ApiTokenBundle\Contract\ReachFilterInterface;
 use Nowo\ApiTokenBundle\Contract\ReachProviderInterface;
 use Nowo\ApiTokenBundle\Contract\TokenRevocationListenerInterface;
 use Nowo\ApiTokenBundle\Domain\ApiTokenStoreInterface;
@@ -39,6 +42,10 @@ use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitMiddleware;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitQueue;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitQueueResetListener;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\DbalApiTokenStore;
+use Nowo\ApiTokenBundle\Infrastructure\RateLimit\SymfonyApiTokenRateLimiter;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenTokenStorageResetListener;
+use Nowo\ApiTokenBundle\Infrastructure\Security\ClientIpHasher;
 use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponsePolicy;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -47,6 +54,8 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\RateLimiter\RateLimiterFactory;
+use Symfony\Component\RateLimiter\Storage\CacheStorage;
 
 use function class_exists;
 use function is_array;
@@ -56,7 +65,9 @@ use function sprintf;
  * Loads `nowo_api_token`: validates the strict configuration tree, publishes it as container parameters and, while
  * `enabled` is true, registers the S1 core (contract 221-A §4–§6.2, §6.6, §10): the module registry, the token codec and
  * hasher, the DBAL store with its after-commit middleware, the issuer, revoker, query and authenticator services, the
- * owner defaults, the Doctrine metadata listener and the `nowo:api-token:issue` / `purge-expired` commands.
+ * owner defaults, the Doctrine metadata listener and the `nowo:api-token:issue` / `purge-expired` commands; and the S2
+ * firewall integration (§6.3, §6.5, §6.7): the reach filter chain, the rate limiter, the firewall authenticator and the
+ * token storage reset listener.
  *
  * `enabled: false` registers no service, listener, mapping or command. The parameters always exist, so the host's
  * `security.yaml` patterns can follow `%nowo_api_token.api_prefix%` (one-value prefix rule).
@@ -68,6 +79,9 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
 
     /** Tag of {@see TokenRevocationListenerInterface} services. */
     public const TAG_REVOCATION_LISTENER = 'nowo_api_token.revocation_listener';
+
+    /** Tag of {@see ReachFilterInterface} services (chained by priority). */
+    public const TAG_REACH_FILTER = 'nowo_api_token.reach_filter';
 
     /** Tag of {@see ModuleDefinitionProviderInterface} services. */
     public const TAG_MODULE_PROVIDER = 'nowo_api_token.module_provider';
@@ -125,6 +139,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         $container->setParameter(self::ALIAS . '.enabled', $config['enabled']);
         $container->setParameter(self::ALIAS . '.api_prefix', $config['api']['prefix']);
         $container->setParameter(self::ALIAS . '.table_prefix', $config['doctrine']['table_prefix']);
+        $container->setParameter(self::ALIAS . '.rate_limit_pool', $config['rate_limit']['cache_pool']);
         $container->setParameter(self::ALIAS . '.config', $this->redacted($config));
         if (!$config['enabled']) {
             return;
@@ -168,6 +183,7 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
 
         $container->registerForAutoconfiguration(TokenRevocationListenerInterface::class)->addTag(self::TAG_REVOCATION_LISTENER);
         $container->registerForAutoconfiguration(ModuleDefinitionProviderInterface::class)->addTag(self::TAG_MODULE_PROVIDER);
+        $container->registerForAutoconfiguration(ReachFilterInterface::class)->addTag(self::TAG_REACH_FILTER);
 
         $container->register(ModuleRegistry::class, ModuleRegistry::class)
             ->setFactory([ModuleRegistryFactory::class, 'create'])
@@ -225,12 +241,14 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         $container->setAlias(ApiTokenRevokerInterface::class, ApiTokenRevoker::class)->setPublic(true);
         $container->register(ApiTokenQuery::class, ApiTokenQuery::class)->setArguments([$store, $maxPerOwner]);
         $container->setAlias(ApiTokenQueryInterface::class, ApiTokenQuery::class)->setPublic(true);
+        $container->register(ReachFilterChain::class, ReachFilterChain::class)->setArguments([new TaggedIteratorArgument(self::TAG_REACH_FILTER)]);
         $container->register(ApiTokenAuthenticator::class, ApiTokenAuthenticator::class)->setArguments([
             $store, new Reference(TokenCodec::class), new Reference(TokenHasherInterface::class), new Reference(ModuleRegistry::class),
             new Reference(ApiTokenSettingsProviderInterface::class), new Reference(OwnerResolverInterface::class), new Reference(OwnerStatusInterface::class),
-            $dispatcher, $clock, $logger,
+            $dispatcher, $clock, $logger, new Reference(ReachFilterChain::class),
         ]);
         $container->setAlias(ApiTokenAuthenticatorInterface::class, ApiTokenAuthenticator::class)->setPublic(true);
+        $this->registerFirewall($container, $config, $dispatcher);
 
         // Registered from their #[AsCommand] attribute (REQ-SF-003): autoconfiguration adds the console tag.
         $container->register(IssueTokenCommand::class, IssueTokenCommand::class)
@@ -239,6 +257,46 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         $container->register(PurgeExpiredTokensCommand::class, PurgeExpiredTokensCommand::class)
             ->setAutoconfigured(true)
             ->setArguments([new Reference(ApiTokenRevoker::class), $expiry['purge_after_days'], $messenger['batch_size'], $messenger['max_seconds'], $clock, $logger]);
+    }
+
+    /**
+     * S2: rate limits in the host's cache pool, the firewall authenticator and the worker-mode token storage reset.
+     *
+     * @param array<string, mixed> $config
+     */
+    private function registerFirewall(ContainerBuilder $container, array $config, Reference $dispatcher): void
+    {
+        /** @var array{cache_pool: string, count_rest_writes: bool, per_token: array{limit: int, interval: string}, writes: array{limit: int, interval: string}, failed_per_ip: array{limit: int, interval: string}} $rate */
+        $rate = $config['rate_limit'];
+        /** @var array{on_failure: string} $firewall */
+        $firewall = $config['firewall'];
+        /** @var array{beacon_v1: bool} $legacy */
+        $legacy = $config['legacy'];
+
+        $container->register(ClientIpHasher::class, ClientIpHasher::class)->setArguments(['%kernel.secret%']);
+        $container->register(self::ALIAS . '.rate_limit_storage', CacheStorage::class)->setArguments([new Reference($rate['cache_pool'])]);
+        $factories = [];
+        foreach (['per_token' => 'nowo_api_token', 'writes' => 'nowo_api_token_write', 'failed_per_ip' => 'nowo_api_token_failed_ip'] as $key => $id) {
+            $container->register(self::ALIAS . '.limiter.' . $key, RateLimiterFactory::class)->setArguments([
+                ['id' => $id, 'policy' => 'fixed_window', 'limit' => $rate[$key]['limit'], 'interval' => $rate[$key]['interval']],
+                new Reference(self::ALIAS . '.rate_limit_storage'),
+            ]);
+            $factories[] = new Reference(self::ALIAS . '.limiter.' . $key);
+        }
+        $container->register(SymfonyApiTokenRateLimiter::class, SymfonyApiTokenRateLimiter::class)->setArguments([...$factories, new Reference(ClientIpHasher::class)]);
+        $container->setAlias(ApiTokenRateLimiterInterface::class, SymfonyApiTokenRateLimiter::class)->setPublic(true);
+
+        // No PSR clock: Retry-After is measured on the limiter's own time base (symfony/rate-limiter reads microtime()).
+        $container->register(ApiTokenFirewallAuthenticator::class, ApiTokenFirewallAuthenticator::class)->setArguments([
+            new Reference(ApiTokenAuthenticatorInterface::class), new Reference(ApiTokenRateLimiterInterface::class), new Reference(TokenCodec::class),
+            $dispatcher, new Reference(ClientIpHasher::class), $firewall['on_failure'], $rate['count_rest_writes'],
+        ])->setArgument('$legacyBeaconV1', $legacy['beacon_v1']);
+        // Removed by FirewallPass when SecurityBundle is not enabled (no token storage); FirewallPass sets the firewall
+        // contexts that list the authenticator.
+        $container->register(ApiTokenTokenStorageResetListener::class, ApiTokenTokenStorageResetListener::class)
+            ->setArguments([new Reference(ApiTokenTokenStorageResetListener::TOKEN_STORAGE), []])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => ApiTokenTokenStorageResetListener::REQUEST_PRIORITY])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.finish_request', 'method' => 'onFinishRequest', 'priority' => ApiTokenTokenStorageResetListener::FINISH_PRIORITY]);
     }
 
     /**

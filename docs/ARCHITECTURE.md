@@ -9,6 +9,7 @@ follow.
 - [Two host kinds](#two-host-kinds)
 - [S0 contents](#s0-contents)
 - [S1 contents](#s1-contents)
+- [S2 contents](#s2-contents)
 
 ## Layers
 
@@ -50,3 +51,21 @@ translation catalogues.
 Writes never go through an EntityManager: the store uses the DBAL connection of `doctrine.entity_manager` in its own
 transaction, or joins the host's open transaction, and the after-commit queue releases listeners and events at the
 outermost commit.
+
+## S2 contents
+
+| Layer | Classes |
+| --- | --- |
+| `Contract` | `ApiTokenRateLimiterInterface` and its answer `RateLimitState` (`RateLimitScope`: token, write, failed IP); the host SPI `ReachFilterInterface`; `ApiTokenAuthFailedEvent` |
+| `Application` | `ReachFilterChain` (runs the tagged filters in the authenticator's step 8 and intersects each answer with the reach it was given) |
+| `Infrastructure\Security` | `ApiTokenFirewallAuthenticator` (Symfony authenticator and entry point), `ApiTokenContext` (reads the request stamp), `ApiTokenTokenStorageResetListener` (worker mode), `ClientIpHasher`, the internal `ApiTokenAuthenticationException` / `ApiTokenRateLimitedException` |
+| `Infrastructure\RateLimit` | `SymfonyApiTokenRateLimiter` (fixed windows in `rate_limit.cache_pool`) |
+| `DependencyInjection` | `Compiler\FirewallPass`: the cache pool must exist; a firewall that lists the authenticator must be stateless |
+
+Request flow: `supports()` (an `Authorization` value with the token prefix; earlier stamps removed) → failed-IP peek (a blocked IP stops
+here, no parsing) → `ApiTokenAuthenticatorInterface::authenticate()` (contract §6.2, reach filters included) → token
+bucket (and write budget) → `SelfValidatingPassport` → Symfony's passport checks (the firewall's user checker) →
+`createToken()` → `onAuthenticationSuccess()` stamps `ApiTokenContext` on the request and marks it signed in (the
+reset listener then empties the token storage on `kernel.finish_request`, whatever token a later listener put there,
+and again before the next main request's firewall). A failure counts against the
+IP, dispatches `ApiTokenAuthFailedEvent` and answers per `firewall.on_failure`.

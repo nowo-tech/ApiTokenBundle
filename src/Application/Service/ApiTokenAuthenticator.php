@@ -40,7 +40,8 @@ use function str_repeat;
  * 5. `expires_at <= now` (`Expired`);
  * 6. module switch off (`Disabled`);
  * 7. owner erased or inactive, checked on every call with no cache (`OwnerInactive`);
- * 8. grants narrowed by the registry and the module switches (never widened);
+ * 8. grants narrowed by the registry and the module switches, reach narrowed by the {@see ReachFilterChain} (never
+ *    widened);
  * 9. principal built; *last used* written when older than 60 s (outside any open transaction; a failure is logged at
  *    debug level and ignored), then {@see ApiTokenUsedEvent}.
  *
@@ -67,6 +68,7 @@ final readonly class ApiTokenAuthenticator implements ApiTokenAuthenticatorInter
         private EventDispatcherInterface $dispatcher,
         ?ClockInterface $clock = null,
         private ?LoggerInterface $logger = null,
+        private ?ReachFilterChain $reachFilters = null,
     ) {
         $this->clock = $clock ?? new NativeClock();
     }
@@ -124,6 +126,17 @@ final readonly class ApiTokenAuthenticator implements ApiTokenAuthenticatorInter
             $token->reach(),
             $token->expiresAt(),
         );
+        if ($this->reachFilters instanceof ReachFilterChain) {
+            $principal = new ApiTokenPrincipal(
+                $principal->tokenId,
+                $principal->tokenName,
+                $principal->owner,
+                $principal->user,
+                $principal->grants,
+                $this->reachFilters->apply($principal),
+                $principal->expiresAt,
+            );
+        }
 
         $threshold = $now->modify('-' . self::LAST_USED_THROTTLE_SECONDS . ' seconds');
         $lastUsed  = $token->lastUsedAt();

@@ -28,7 +28,7 @@
 
 # Contract 221-A: personal API tokens (ApiTokenBundle). Contract v0.1 for symfony-beacon and the matrix apps
 
-Status 2026-11-23: **v0.2 contract; implementation in progress (2026-11-23).** Owner Q-O and Beacon Q-B answered as recommended (2026-11-12). Slice S1 released as `v0.1.0`, `v0.2.0` is the concurrency release; S2 to S5 not started. See [ROADMAP.md](ROADMAP.md).
+Status 2026-11-23: **v0.2 contract; implementation in progress (2026-11-23).** Owner Q-O and Beacon Q-B answered as recommended (2026-11-12). Slice S1 released as `v0.1.0`, `v0.2.0` is the concurrency release; S2 in PR #12, S3 to S5 not started. See [ROADMAP.md](ROADMAP.md).
 The original status line was: design only, no code, no repository, no PR, no tag. v0.2 = review pass after the account switch (see "Review notes v0.2" at the end); sibling contracts:
 `NOTIFY-KIT-CONTRACT.md` (221-B) and `REPORT-KIT-CONTRACT.md` (221-C) in this folder. The owner approved the extraction on 2026-11-11 (Beacon request
 `docs/ops/BUNDLES-REQUESTS/2026-11-11-reaudit-extraction-candidates.md`, item 1).
@@ -425,7 +425,10 @@ stateless.
 ### 6.3 Firewall integration and refusals
 
 - `Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator` (Symfony `AbstractAuthenticator`):
-  - `supports()` is true when an `Authorization` header is present.
+  - `supports()` is true when the `Authorization` header carries a value with the token prefix (`Bearer <prefix>…`
+    or a bare `<prefix>…`; also `bt_` with `legacy.beacon_v1`). Another scheme or value (`Basic`, a JWT) is left to
+    the firewall's other authenticators: it is not counted against the IP, raises no event and is never answered by
+    this authenticator (audit ZAB-S2-L1).
   - On success it returns a `SelfValidatingPassport` for the resolved user and stamps the principal on the request.
   - On failure, `on_failure: pass` (default) lets the request through **with no user**. Each API answers its own
     401 / 403 / 404 in its own JSON shape (`REQ-API-002`, TaskBoard / Wiki / McpKit behaviour).

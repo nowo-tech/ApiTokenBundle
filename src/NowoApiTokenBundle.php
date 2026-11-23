@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\ApiTokenBundle;
 
+use Nowo\ApiTokenBundle\DependencyInjection\Compiler\FirewallPass;
 use Nowo\ApiTokenBundle\DependencyInjection\Compiler\OwnerUserCheckerPass;
 use Nowo\ApiTokenBundle\DependencyInjection\Compiler\RequireDoctrinePass;
 use Nowo\ApiTokenBundle\DependencyInjection\NowoApiTokenExtension;
@@ -16,7 +17,7 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
  * Personal API tokens for Symfony: hashed lookup tokens with per-module grants, a tenant reach, mandatory expiry, revocation, rate limits and audit events, one Bearer authenticator for every API and a UiKit account and operator UI.
  *
  * S1 core: token store, issuer, revoker, query and authenticator services, Doctrine mapping and commands, all registered
- * only while `nowo_api_token.enabled` is true. The firewall, rate limits, UI, bridges and HTTP API follow in S2 to S5
+ * only while `nowo_api_token.enabled` is true. S2 adds the firewall authenticator and the rate limits; the UI, bridges and HTTP API follow in S3 to S5
  * (see docs/ROADMAP.md).
  *
  * @author Héctor Franco Aceituno <hectorfranco@nowo.tech>
@@ -34,6 +35,7 @@ final class NowoApiTokenBundle extends Bundle
     {
         parent::build($container);
         $container->addCompilerPass(new RequireDoctrinePass());
+        $container->addCompilerPass(new FirewallPass());
         $container->addCompilerPass(new OwnerUserCheckerPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -1000);
     }
 

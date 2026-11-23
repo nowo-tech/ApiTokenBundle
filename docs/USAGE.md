@@ -163,18 +163,82 @@ value:
 | --- | --- |
 | `ApiTokenIssuedEvent` (`tokenId`, `lookupId`, `owner`, `name`, `grants`, `reachSummary`, `expiresAt`, `createdVia`) | After the insert commits |
 | `ApiTokenRevokedEvent` (`tokenId`, `lookupId`, `owner`, `name`, `reason`, `actor`) | After the delete commits, once per token |
-| `ApiTokenUsedEvent` (`tokenId`, `owner`, `module`: null until the S2 firewall fills it) | Only when *last used* was written (at most once a minute per token) |
+| `ApiTokenUsedEvent` (`tokenId`, `owner`, `module`: null; the generic firewall does not know the module, the S4 bridges may set it) | Only when *last used* was written (at most once a minute per token) |
+| `ApiTokenAuthFailedEvent` (`failure`, `lookupId` for `WrongSecret` / `Expired` / `OwnerInactive` only, `clientIpHash`, `path`) | Every token refused by the firewall (S2) |
 
 ## Protecting your own API
 
-Your controllers read the principal from the request (S2): `ApiTokenContext::current($request)` returns the
-`ApiTokenPrincipal` (token id, owner, grants, reach) or null. Declare your module in `modules:` and check
-`$principal->grants->atLeast('reports', 'read', $registry)`; always re-check the person's own permissions: a token only
-narrows them.
+**1. A stateless firewall with the bundle's authenticator.** Derive the pattern from the API prefix parameter:
+
+```yaml
+# config/packages/security.yaml
+security:
+    firewalls:
+        api:
+            pattern: '^%nowo_api_token.api_prefix%/(reports|tokens)/'
+            stateless: true            # required: the container refuses to build otherwise
+            provider: app_users        # any; the token's user is loaded by the bundle's owner resolver
+            user_checker: App\Security\UserChecker
+            custom_authenticators:
+                - Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenFirewallAuthenticator
+```
+
+The credential is the `Authorization` header only (`Bearer <token>`, or the bare token). Query strings, cookies and
+bodies are never read. Only values that start with your `token_prefix` are the authenticator's business, so the
+firewall can share `custom_authenticators` with `http_basic` or a JWT authenticator: their credentials are never
+counted as failed tokens nor answered with `TOKEN_000`. The firewall's user checker runs as usual (and the bundle checks the owner's status itself on
+every request).
+
+**2. Read the principal in your controller.** `ApiTokenContext::current($request)` returns the `ApiTokenPrincipal`
+(token id, name, owner, user, grants, reach, expiry) or null. Only the firewall writes it, after Symfony accepted the
+passport; a value set earlier in the request is removed. Declare your module in `modules:` and check the grant; always
+re-check the person's own permissions, because a token only narrows them:
+
+```php
+use Nowo\ApiTokenBundle\Infrastructure\Security\ApiTokenContext;
+
+$principal = ApiTokenContext::current($request);
+if ($principal === null) {
+    $limit = ApiTokenContext::rateLimit($request);   // a refused budget: answer your own 429
+    if ($limit !== null && !$limit->accepted) {
+        return new JsonResponse(['err' => 'Too many requests'], 429, ['Retry-After' => (string) $limit->retryAfterSeconds(new \DateTimeImmutable())]);
+    }
+
+    return new JsonResponse(['err' => 'Unauthorized'], 401);   // your API's own refusal shape
+}
+if (!$principal->grants->atLeast('reports', 'read', $moduleRegistry)) {
+    return new JsonResponse(['err' => 'Forbidden'], 403);
+}
+// $principal->reach->isEverything() / entries(): narrow your queries; then check the user's real access per object.
+```
+
+**3. Choose the refusal.** With `firewall.on_failure: pass` (default) a refused token reaches your controller with no
+principal, so your API answers in its own JSON shape. With `unauthorized` the firewall answers `401 TOKEN_000` (and
+`429 TOKEN_001`) itself, for APIs with no own refusal. Every failure kind (unknown, wrong secret, expired, revoked,
+disabled owner, module switched off) gets the same answer: a client never learns whether a lookup id exists.
+
+**4. Rate limits.** The firewall consumes the token's bucket (`rate_limit.per_token`) once per authenticated request,
+for every module, and the write budget for unsafe methods when `rate_limit.count_rest_writes` is true. Do not consume
+the bucket again: read `ApiTokenContext::rateLimit($request)` (the accepted state carries `limit` and `remaining`, for
+`RateLimit-*` headers). For a write that is not an unsafe HTTP method (an RPC call), consume
+`ApiTokenRateLimiterInterface::consumeWrite($principal->tokenId)` yourself. Failed tokens per client IP are counted by
+the firewall; behind a reverse proxy, configure `framework.trusted_proxies`.
+
+**5. Narrow the reach per request (optional).** Implement `ReachFilterInterface` (autoconfigured) to drop entries on
+every request, e.g. organisations that forbid tokens. The bundle intersects every answer with the reach it was given,
+so a filter can never widen a token.
+
+**Failure events.** `ApiTokenAuthFailedEvent` (`failure`, `lookupId` only when the token exists, `clientIpHash`, route
+name) is dispatched on every token failure; keep listeners cheap. A rate limit refusal is not a token failure and
+dispatches nothing.
 
 ## FrankenPHP worker mode
 
-The principal lives only on the request attributes; no token, owner or reach is memoised across requests. See
+The principal lives only on the request attributes; no token, owner or reach is memoised across requests. With the
+kernel kept alive and not reset, Symfony would keep the last request's security token in the token storage (only the
+services resetter clears it); the bundle removes its own token when the main request finishes and before the next one
+is authenticated, so a request without a token never runs as the previous request's user. Rate limit counters live in
+the cache pool. See
 [FRANKENPHP-WORKER-AUDIT.md](FRANKENPHP-WORKER-AUDIT.md).
 
 ## Translations
