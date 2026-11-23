@@ -1,0 +1,11 @@
+{#
+  *New token* page (contract §8.1, REQ-UI-003): UiKit form scaffold. Variable: page (UiKit FormPage). The dialog
+  fragment of the same URL is account/_new_fragment.html.twig.
+#}
+{% extends '@NowoUiKit/page/form.html.twig' %}
+
+{% block nowo_ui_form_body %}
+    {#- Form-level errors (refusals of the issuer, the re-auth step, the rate limits) above the fields. -#}
+    <div data-testid="api-token-form-errors">{{ form_errors(page.form) }}</div>
+    {{ parent() }}
+{% endblock %}

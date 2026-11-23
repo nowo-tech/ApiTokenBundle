@@ -1,0 +1,7 @@
+# pt: constraint messages of the bundle forms (validators domain, same keys in the seven locales).
+"nowo_api_token.name.blank": "Dê um nome ao token."
+"nowo_api_token.name.too_long": "Use no máximo {{ limit }} caracteres."
+"nowo_api_token.reach.blank": "Escolha onde o token funciona."
+"nowo_api_token.revoke_all.confirm": "Marque a caixa para confirmar."
+"nowo_api_token.lookup.blank": "Cole um token, um identificador ou um id de busca."
+"nowo_api_token.lookup.invalid": "Isto não é um token, um identificador nem um id de busca desta aplicação."

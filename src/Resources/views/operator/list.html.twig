@@ -1,0 +1,34 @@
+{#
+  Operator page (contract §8.2, REQ-UI-002/003): UiKit list scaffold. Variables: page (UiKit ListPage, rows:
+  Presentation\View\TokenRow), search (FormView of OperatorLookupType: POST + CSRF, the pasted token is never printed
+  back), next_href (keyset page, null when none). The scaffold renders the GET filters (owner key, lookup id or handle),
+  the table, the revoke confirm dialogs and the empty state; this template adds the leaked-token search after the
+  filters, and fills the row cells and the pager.
+#}
+{% extends '@NowoUiKit/page/list.html.twig' %}
+
+{% block nowo_ui_list_filters %}
+    {{- parent() -}}
+    {% if search|default(null) %}
+        {%- set _b = page.bundle -%}
+        {{ form_start(search, {attr: {class: nowo_ui_class('form', _b), 'data-testid': 'api-token-operator-search'}}) }}
+            <div data-testid="api-token-operator-search-errors">{{ form_errors(search) }}</div>
+            {{ form_widget(search) }}
+            <div class="{{ nowo_ui_class('form_actions', _b) }}">
+                <button type="submit" class="{{ nowo_ui_class('btn_secondary', _b) }}">{{ 'operator.search'|trans({}, 'NowoApiTokenBundle') }}</button>
+            </div>
+        {{ form_end(search) }}
+    {% endif %}
+{% endblock %}
+
+{% block nowo_ui_list_row %}
+    {{- include('@NowoApiTokenBundle/_row.html.twig', {row: row, page: page, operator: true}, false) -}}
+{% endblock %}
+
+{% block nowo_ui_list_after %}
+    {% if next_href|default(null) %}
+        <nav class="{{ nowo_ui_class('toolbar', page.bundle) }}" aria-label="{{ 'operator.pages'|trans({}, 'NowoApiTokenBundle') }}">
+            <a class="{{ nowo_ui_class('btn_secondary', page.bundle) }}" href="{{ next_href }}" rel="next" data-testid="api-token-next">{{ 'operator.next'|trans({}, 'NowoApiTokenBundle') }}</a>
+        </nav>
+    {% endif %}
+{% endblock %}

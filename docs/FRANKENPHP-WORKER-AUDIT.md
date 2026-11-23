@@ -52,6 +52,9 @@ resetter between requests.
 | `ApiTokenFirewallAuthenticator`, `SymfonyApiTokenRateLimiter`, `ClientIpHasher`, `ReachFilterChain` (S2) | `final readonly`; the principal and the rate limit answer go on the request (and the request's security token), never on a service | ✅ (Igor's note on `registerFailedToken()` is `@igor-ignore`: the count goes to the cache pool) |
 | `ApiTokenTokenStorageResetListener` (S2) | Stateless (the firewall context list is build-time configuration); empties the storage at the end of main requests the bundle signed in or that went through its firewalls | ✅ |
 | `Compiler\FirewallPass` (S2) | Container build only | ✅ |
+| `AccountTokensController`, `OperatorTokensController`, `ReauthSession`, `PasswordReauthGate`, access checkers, `ApiTokenAdminGuard`, `FramingHeadersListener`, page objects (S3) | `final readonly`; the re-auth mark lives in the request's session, the counters in the cache pool, the secret only in the response | ✅ |
+| Form types (S3) | FormKit's `FormOptionsTrait` binds the builder only for the duration of `buildForm()` | ✅ |
+| `ApiTokenAccessCheckEvent` (S3) | Mutable per-dispatch DTO (grant / deny), never a service | ✅ (`@igor-ignore` with a reason) |
 
 ## Rules for the next slices
 

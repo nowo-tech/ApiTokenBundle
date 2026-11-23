@@ -13,8 +13,8 @@ EntityManager.
 > 🚧 **Status: 0.x, built slice by slice** from its design contract ([docs/CONTRACT.md](docs/CONTRACT.md), 221-A).
 > S1 ships the token store, format and hash, the issuer, revoker, query and authenticator services, the module registry
 > and the `issue` / `purge-expired` commands; S2 the stateless firewall authenticator, the request stamp and the rate
-> limits, for standard and DDD hosts. The pages, bridges and HTTP API land with the next slices in
-> [docs/ROADMAP.md](docs/ROADMAP.md).
+> limits; S3 the account and operator pages (re-auth, one-time secret, revoke, revoke all), for standard and DDD hosts.
+> The bridges and the HTTP API land with the next slices in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 > 📋 **Compatible with Symfony 7.4, 8.0 and 8.1** · PHP 8.2+ (Symfony 8.x requires PHP 8.4+)
 

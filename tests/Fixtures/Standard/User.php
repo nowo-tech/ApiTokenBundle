@@ -6,6 +6,7 @@ namespace Nowo\ApiTokenBundle\Tests\Fixtures\Standard;
 
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
@@ -14,7 +15,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'app_user')]
-class User implements UserInterface
+class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
     /**
      * @param non-empty-string $id
@@ -25,12 +26,19 @@ class User implements UserInterface
         public string $id,
         #[ORM\Column(type: Types::BOOLEAN)]
         public bool $active = true,
+        #[ORM\Column(type: Types::STRING, length: 255, nullable: true)]
+        public ?string $password = 'secret-pass',
     ) {
     }
 
     public function getRoles(): array
     {
-        return ['ROLE_USER'];
+        return $this->id === 'admin' ? ['ROLE_USER', 'ROLE_ADMIN'] : ['ROLE_USER'];
+    }
+
+    public function getPassword(): ?string
+    {
+        return $this->password;
     }
 
     public function eraseCredentials(): void

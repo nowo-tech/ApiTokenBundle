@@ -1,0 +1,7 @@
+# nl: constraint messages of the bundle forms (validators domain, same keys in the seven locales).
+"nowo_api_token.name.blank": "Geef het token een naam."
+"nowo_api_token.name.too_long": "Gebruik maximaal {{ limit }} tekens."
+"nowo_api_token.reach.blank": "Kies waar het token werkt."
+"nowo_api_token.revoke_all.confirm": "Vink het vakje aan om te bevestigen."
+"nowo_api_token.lookup.blank": "Plak een token, een kenmerk of een zoek-id."
+"nowo_api_token.lookup.invalid": "Dit is geen token, kenmerk of zoek-id van deze toepassing."

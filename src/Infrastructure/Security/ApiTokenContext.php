@@ -7,6 +7,7 @@ namespace Nowo\ApiTokenBundle\Infrastructure\Security;
 use Nowo\ApiTokenBundle\Contract\ApiTokenPrincipal;
 use Nowo\ApiTokenBundle\Contract\RateLimitState;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 
 /**
  * Reads what {@see ApiTokenFirewallAuthenticator} stamped on the request (contract §4.2). The principal lives only on
@@ -64,6 +65,17 @@ final class ApiTokenContext
     public static function signedIn(Request $request): bool
     {
         return $request->attributes->has(self::SIGNED_IN);
+    }
+
+    /**
+     * Whether the request is signed in with an API token: the security token was created by the bundle's authenticator,
+     * or the authenticator signed the request in (its token may have been replaced since). Account and operator pages
+     * refuse such requests (audit ZAB-S3-L2): a token must never manage tokens.
+     */
+    public static function signedInWithToken(?TokenInterface $token, ?Request $request): bool
+    {
+        return ($token?->hasAttribute(ApiTokenFirewallAuthenticator::TOKEN_PRINCIPAL) ?? false)
+            || ($request instanceof Request && self::signedIn($request));
     }
 
     /**

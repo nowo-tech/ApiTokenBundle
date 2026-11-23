@@ -6,6 +6,7 @@
 - [Install](#install)
 - [Enable the bundle](#enable-the-bundle)
 - [Database](#database)
+- [Pages (S3)](#pages-s3)
 - [Next steps](#next-steps)
 
 ## Requirements
@@ -88,8 +89,37 @@ SQLite: the PostgreSQL statements with `CLOB` for the two JSON columns and `DATE
 The XML mapping and the attribute twin (`doctrine.mapping: attribute`) produce the same table; `SchemaTest` asserts it
 on every CI database.
 
+## Pages (S3)
+
+The account pages and the operator page are off by default. To use them:
+
+```yaml
+# config/routes/nowo_api_token.yaml (the Flex recipe adds it)
+nowo_api_token:
+    resource: .
+    type: nowo_api_token
+
+# config/packages/nowo_api_token.yaml
+nowo_api_token:
+    web_ui: { enabled: true }      # /account/security/api-tokens
+    admin_ui: { enabled: true }    # /admin/api-tokens, ROLE_ADMIN by default
+
+# config/packages/security.yaml (host application)
+security:
+    access_control:
+        - { path: ^/admin/api-tokens, roles: ROLE_ADMIN }
+        - { path: ^/account/security/api-tokens, roles: IS_AUTHENTICATED_FULLY }
+```
+
+Requirements while a page area is on (the container refuses to build otherwise): TwigBundle, FrameworkBundle `form`,
+`csrf_protection` and sessions, SecurityBundle, UiKitBundle and FormKitBundle registered, and for the default re-auth
+step a password hasher (`security.password_hashers`), or your own `reauth.gate` (SSO hosts). The pages are not under the
+API prefix and not versioned (internal UI routes); sessions must be enabled (CSRF tokens and the re-auth mark live in the
+session).
+
 ## Next steps
 
 - [CONFIGURATION.md](CONFIGURATION.md): the full tree.
 - [USAGE.md](USAGE.md): the integration paths (standard and DDD).
+- [TEMPLATES.md](TEMPLATES.md): the page templates and how to override them.
 - [FRANKENPHP-WORKER-AUDIT.md](FRANKENPHP-WORKER-AUDIT.md): worker mode with the kernel kept alive.

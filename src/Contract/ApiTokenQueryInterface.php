@@ -25,4 +25,9 @@ interface ApiTokenQueryInterface
      * Operator page: keyset pagination, newest first; `$after` is the previous page's {@see ApiTokenPage::$nextAfter}.
      */
     public function page(?string $after, int $limit, ?OwnerRef $owner = null): ApiTokenPage;
+
+    /**
+     * The token with this lookup id (its public handle), for the operator page's leak search (S3). Exact match only.
+     */
+    public function findByLookupId(LookupId $lookupId): ?ApiTokenView;
 }

@@ -13,6 +13,7 @@ message that says so. It also needs a real account-status check: see [Owner stat
 
 - [Full reference](#full-reference)
 - [Firewall and rate limits](#firewall-and-rate-limits)
+- [Pages (S3)](#pages-s3)
 - [Owner status](#owner-status)
 - [Changes that invalidate every token](#changes-that-invalidate-every-token)
 - [Container parameters](#container-parameters)
@@ -71,7 +72,7 @@ nowo_api_token:
 | --- | --- |
 | `enabled`, `doctrine`, `owner`, `modules`, `token_prefix`, `checksum`, `hash`, `expiry` (except `choices`, `notify_before_days`), `max_per_owner`, `reach`, `settings_provider`, `messenger` (the purge command), `concurrency`, `conflict_response` | S1 |
 | `firewall`, `rate_limit` (except `issue_per_owner`) | S2 |
-| `reauth`, `web_ui`, `admin_ui`, `expiry.choices`, `rate_limit.issue_per_owner` | S3 |
+| `reauth`, `web_ui`, `admin_ui`, `expiry.choices`, `rate_limit.issue_per_owner`, `reach.allow_everything` (form) | S3 |
 | `bridges`, `http_log`, `revoke_on_sessions_revoked` | S4 |
 | `api`, `legacy`, `schedule`, `expiry.notify_before_days` | S5 |
 
@@ -101,6 +102,27 @@ you list in a firewall's `custom_authenticators`. Services implementing `ReachFi
 Every limit is a fixed window (`symfony/rate-limiter` `fixed_window`) without a lock (contract §10): two exactly
 concurrent requests may both take the last unit of a window, which over-admits by at most the number of concurrent
 workers. The IP is keyed by an HMAC with `kernel.secret`, never stored in clear.
+
+## Pages (S3)
+
+| Key | Effect |
+| --- | --- |
+| `web_ui.enabled`, `web_ui.path_prefix` | The account pages (`IS_AUTHENTICATED_FULLY`): list, *New token*, *Revoke*, *Revoke all* |
+| `web_ui.layout_template` | Layout of the account pages (default: UiKit's admin layout) |
+| `web_ui.templates.list`, `web_ui.templates.created` | Replace the list page and the one-time secret block ([TEMPLATES.md](TEMPLATES.md)) |
+| `admin_ui.enabled`, `admin_ui.path_prefix` | The operator page |
+| `admin_ui.security.access_roles` | Any one of these roles opens the operator page (default `[ROLE_ADMIN]`, REQ-UI-002) |
+| `admin_ui.security.access_checker` | Your `ApiTokenAccessCheckerInterface` service instead of the role check |
+| `admin_ui.security.allow_unauthenticated` | **Demo only**: the operator page without sign-in. Never in production |
+| `reauth.enabled`, `reauth.fresh_seconds` | The re-auth step before *New token* and *Revoke all*, and how long it stays fresh in one session |
+| `reauth.max_attempts` | Failed or successful attempts per session per 15 minutes |
+| `reauth.gate` | Your `ReauthGateInterface` (SSO step-up, MFA); default the password gate on the host's password hasher |
+| `rate_limit.issue_per_owner` | Tokens created from the account page per owner |
+| `expiry.choices`, `expiry.default_days` | The expiry select (values above the policy's maximum are hidden) |
+
+Per-token decisions of the operator page: listen to `ApiTokenAccessCheckEvent` (`ApiTokenEvents::ACCESS_CHECK`) and
+call `deny()` (a deny wins over any grant). The operator page is not tenant-scoped (it lists every token of the
+application): on a multi-tenant host, point `access_checker` at a checker that only lets super-admins in.
 
 ## Owner status
 

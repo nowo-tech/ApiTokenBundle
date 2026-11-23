@@ -12,6 +12,7 @@
 - [Console commands (S1)](#console-commands-s1)
 - [Events (S1)](#events-s1)
 - [Protecting your own API](#protecting-your-own-api)
+- [Account and operator pages (S3)](#account-and-operator-pages-s3)
 - [FrankenPHP worker mode](#frankenphp-worker-mode)
 - [Translations](#translations)
 
@@ -231,6 +232,48 @@ so a filter can never widen a token.
 **Failure events.** `ApiTokenAuthFailedEvent` (`failure`, `lookupId` only when the token exists, `clientIpHash`, route
 name) is dispatched on every token failure; keep listeners cheap. A rate limit refusal is not a token failure and
 dispatches nothing.
+
+## Account and operator pages (S3)
+
+Enable `web_ui` and/or `admin_ui` and import the routes ([INSTALLATION.md](INSTALLATION.md#pages-s3)).
+
+If your application stores request bodies (HttpLogBundle, a profiler, an APM), mask the fields
+`nowo_api_token_lookup[token]` and `…[reauth_password]`: see [SECURITY.md](SECURITY.md#logging) for the HttpLogBundle
+`redaction.query_params` snippet.
+
+- **Account → Security → API tokens** (`/account/security/api-tokens`): the signed-in person's tokens, *New token*,
+  *Revoke* and *Revoke all*. *New token* and *Revoke all* ask for a fresh re-auth (the password by default) once per
+  session every `reauth.fresh_seconds`. The secret is shown once, right after the create; a reload shows the list only.
+- **Operator page** (`/admin/api-tokens`): every token with its whole handle (`nwt_k7m2q9x4ab3c`), filters by owner key
+  (`user:42`) and by lookup id or handle, *Find token* for a whole leaked token (a POST form: only its lookup id is
+  read, and the page redirects to the lookup-id filter, so the secret never lands in a URL or a log), *Revoke*. It
+  needs a full sign-in (no remember-me) and refuses requests signed in with an API token. It is **not tenant-scoped**:
+  it lists every token of the application, so a multi-tenant host must restrict it to super-admins with
+  `admin_ui.security.access_checker`, or decide per token with a listener:
+
+```php
+use Nowo\ApiTokenBundle\Contract\Event\ApiTokenAccessCheckEvent;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+
+#[AsEventListener]
+final class OrganisationTokenAccess
+{
+    public function __invoke(ApiTokenAccessCheckEvent $event): void
+    {
+        if (!$this->sameOrganisation($event->user, $event->token->owner)) {
+            $event->deny();   // 403
+        }
+    }
+}
+```
+
+- **Reach choices**: implement `ReachProviderInterface` (`reach.provider`) to offer places in the *New token* form
+  (`ReachChoice{key, label, group}`); without it only *everything* can be chosen.
+- **Module labels and levels**: the form and the list translate `module.<key>` and `level.<level>` in the
+  `NowoApiTokenBundle` domain (defaults for `tasks`, `wiki`, `mcp`, `time_track` and their levels); add your keys for
+  your own modules, or set `modules.<key>.label`.
+- **SSO hosts**: implement `ReauthGateInterface` (its `form()` returns your FormKit step-up form type) and set
+  `reauth.gate`.
 
 ## FrankenPHP worker mode
 

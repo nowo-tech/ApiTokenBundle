@@ -1,0 +1,34 @@
+{#
+  One token row of the account and operator tables (contract §8.1, §8.2). Variables: row (Presentation\View\TokenRow),
+  page (the ListPage, for its bundle), operator (bool: adds the owner cell). Values are printed escaped; never the
+  secret, the hash or the reach entries (they can name tenants): only *everything* or a count.
+#}
+{%- set _b = page.bundle -%}
+{%- set _cell = nowo_ui_class('table_cell', _b) -%}
+{%- set _d = 'NowoApiTokenBundle' -%}
+{%- set _t = row.token -%}
+{% if operator|default(false) %}
+    <td class="{{ _cell }} nowo-ui-cell--start" data-label="{{ 'column.owner'|trans({}, _d) }}"><code class="{{ nowo_ui_class('code', _b) }}">{{ _t.owner.key }}</code></td>
+{% endif %}
+<td class="{{ _cell }} nowo-ui-cell--start" data-label="{{ 'column.name'|trans({}, _d) }}" data-nowo-ui-phone="primary">
+    {{- _t.name -}}
+    {%- if row.destructive %} <span class="{{ nowo_ui_class('badge_danger', _b) }}">{{ 'badge.destructive'|trans({}, _d) }}</span>{% endif -%}
+</td>
+<td class="{{ _cell }} nowo-ui-cell--start" data-label="{{ 'column.handle'|trans({}, _d) }}"><code class="{{ nowo_ui_class('code', _b) }}" data-testid="api-token-handle">{{ row.handle }}</code></td>
+<td class="{{ _cell }} nowo-ui-cell--start" data-label="{{ 'column.modules'|trans({}, _d) }}">
+    {%- for _m in row.modules -%}
+        <span class="{{ nowo_ui_class('badge_neutral', _b) }}">{{ _m.module }}: {{ ('level.' ~ _m.level)|trans({}, _d) }}</span>{{ not loop.last ? ' ' }}
+    {%- else -%}—{%- endfor -%}
+</td>
+<td class="{{ _cell }} nowo-ui-cell--start" data-label="{{ 'column.reach'|trans({}, _d) }}" data-nowo-ui-priority="2">
+    {%- set _summary = _t.reach.summary -%}
+    {{- _summary == 'everything' ? 'reach.everything'|trans({}, _d) : 'reach.count'|trans({'%count%': _summary}, _d) -}}
+</td>
+<td class="{{ _cell }} nowo-ui-cell--start" data-label="{{ 'column.created'|trans({}, _d) }}" data-nowo-ui-priority="3"><time datetime="{{ _t.createdAt|date('c', 'UTC') }}">{{ _t.createdAt|date('Y-m-d', 'UTC') }}</time></td>
+<td class="{{ _cell }} nowo-ui-cell--start" data-label="{{ 'column.last_used'|trans({}, _d) }}" data-nowo-ui-priority="2">
+    {%- if _t.lastUsedAt is null -%}{{ 'list.never_used'|trans({}, _d) }}{%- else -%}<time datetime="{{ _t.lastUsedAt|date('c', 'UTC') }}">{{ _t.lastUsedAt|date('Y-m-d H:i', 'UTC') }}</time>{%- endif -%}
+</td>
+<td class="{{ _cell }} nowo-ui-cell--start" data-label="{{ 'column.expires'|trans({}, _d) }}">
+    <time datetime="{{ _t.expiresAt|date('c', 'UTC') }}">{{ _t.expiresAt|date('Y-m-d', 'UTC') }}</time>
+    {%- if row.expiresSoon %} <span class="{{ nowo_ui_class('badge_warning', _b) }}">{{ 'badge.expires_soon'|trans({}, _d) }}</span>{% endif -%}
+</td>

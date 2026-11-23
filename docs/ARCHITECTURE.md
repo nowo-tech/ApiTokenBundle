@@ -10,6 +10,7 @@ follow.
 - [S0 contents](#s0-contents)
 - [S1 contents](#s1-contents)
 - [S2 contents](#s2-contents)
+- [S3 contents](#s3-contents)
 
 ## Layers
 
@@ -69,3 +70,15 @@ bucket (and write budget) → `SelfValidatingPassport` → Symfony's passport ch
 reset listener then empties the token storage on `kernel.finish_request`, whatever token a later listener put there,
 and again before the next main request's firewall). A failure counts against the
 IP, dispatches `ApiTokenAuthFailedEvent` and answers per `firewall.on_failure`.
+
+## S3 contents
+
+| Layer | Classes |
+| --- | --- |
+| `Contract` | `ReauthGateInterface`, `ApiTokenAccessCheckerInterface`, `ApiTokenAccessCheckEvent`; `ApiTokenQueryInterface::findByLookupId()`; `ApiTokenRateLimiterInterface::consumeIssue()` / `consumeReauth()` |
+| `Infrastructure\Security` | `PasswordReauthGate`, `ReauthSession` (the session mark and the attempts), `ConfigurableApiTokenAccessChecker`, `AllowAllApiTokenAccessChecker` (demo), `ApiTokenAdminGuard` |
+| `Presentation` | `Controller\AccountTokensController`, `Controller\OperatorTokensController`, `Form\*` (FormKit form types), `View\AccountPages` / `OperatorPages` / `TokenRow` (UiKit page objects), `Routing\ApiTokenRouteLoader`, `Http\FramingHeadersListener` |
+| `DependencyInjection` | `Compiler\UiPass` (Twig, forms, router, SecurityBundle, CSRF, password hasher) |
+
+The controllers only call the public ports (issuer, revoker, query, policy, reach provider, rate limiter): the pages
+add no write path of their own, so the S1 concurrency and after-commit rules hold unchanged.

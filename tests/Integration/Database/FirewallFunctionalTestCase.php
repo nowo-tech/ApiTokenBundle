@@ -269,7 +269,7 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
     {
         $this->boot(services: static function (ContainerConfigurator $container): void {
             $container->services()->set(ForeignSchemeAuthenticator::class);
-        }, otherFirewalls: ['main' => ['pattern' => '^/main', 'lazy' => true, 'custom_authenticators' => [ForeignSchemeAuthenticator::class]]]);
+        }, otherFirewalls: ['main' => ['pattern' => '^/main', 'lazy' => true, 'provider' => $this->host()->kind === Host::STANDARD ? 'users' : 'none', 'custom_authenticators' => [ForeignSchemeAuthenticator::class]]]);
         $token   = $this->issue('alice', 'CI');
         $foreign = $this->service(ForeignSchemeAuthenticator::class);
         self::assertInstanceOf(ForeignSchemeAuthenticator::class, $foreign);
@@ -356,7 +356,7 @@ abstract class FirewallFunctionalTestCase extends KernelTestCase
     protected function boot(array $config = [], array $firewall = [], ?Closure $services = null, array $otherFirewalls = []): void
     {
         $host      = $this->host();
-        $base      = $host->configure(array_replace($this->firewall(true), $firewall), $otherFirewalls);
+        $base      = $host->configure(array_replace($this->firewall(true), $firewall), ['extra_firewalls' => $otherFirewalls]);
         $configure = static function (ContainerConfigurator $container, string $url) use ($base, $services): void {
             $base($container, $url);
             $container->services()->set(LimitingReachFilter::class)->tag('nowo_api_token.reach_filter');

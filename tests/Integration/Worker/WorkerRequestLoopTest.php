@@ -216,7 +216,7 @@ final class WorkerRequestLoopTest extends KernelTestCase
         $host     = Host::standard();
         $firewall = ['pattern' => '^/api', 'stateless' => true, 'provider' => 'users', 'user_checker' => ActiveUserChecker::class, 'custom_authenticators' => [ApiTokenFirewallAuthenticator::class, ForeignSchemeAuthenticator::class]];
         $limits   = ['rate_limit' => ['per_token' => ['limit' => 100000, 'interval' => '1 minute'], 'failed_per_ip' => ['limit' => 3, 'interval' => '1 minute']]];
-        $base     = $host->configure($firewall, ['main' => ['pattern' => '^/main', 'lazy' => true, 'custom_authenticators' => [ForeignSchemeAuthenticator::class]]]);
+        $base     = $host->configure($firewall, ['extra_firewalls' => ['main' => ['pattern' => '^/main', 'lazy' => true, 'provider' => 'users', 'custom_authenticators' => [ForeignSchemeAuthenticator::class]]]]);
         $kernel   = $this->bootKernel($host->bundleConfig($limits), Host::databaseUrl(), static function (ContainerConfigurator $container, string $url) use ($base): void {
             $base($container, $url);
             $container->services()->set(ForeignSchemeAuthenticator::class);

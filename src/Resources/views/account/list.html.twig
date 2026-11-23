@@ -1,0 +1,34 @@
+{#
+  Account → Security → API tokens (contract §8.1, REQ-UI-003): UiKit list scaffold. Variables: page (UiKit ListPage,
+  rows: Presentation\View\TokenRow), issued (Contract\IssuedToken|null: the token just created), secret (its secret,
+  only in the answer of the POST that created it), created_template (web_ui.templates.created), list_href.
+  The scaffold renders the header actions (New token, Revoke all), the table, the revoke confirm dialogs and the empty
+  state; this template fills the row cells and, right after a create, the one-time secret dialog opened on load.
+
+  Override: web_ui.templates.list, or a template extending '@!NowoApiTokenBundle/account/list.html.twig'.
+#}
+{% extends '@NowoUiKit/page/list.html.twig' %}
+
+{% block nowo_ui_list_row %}
+    {{- include('@NowoApiTokenBundle/_row.html.twig', {row: row, page: page, operator: false}, false) -}}
+{% endblock %}
+
+{% block nowo_ui_list_after %}
+    {% if issued|default(null) and secret|default(null) %}
+        {% set _created %}{{ include(created_template|default('@NowoApiTokenBundle/account/_created.html.twig'), {issued: issued, secret: secret, list_href: list_href}, false) }}{% endset %}
+        {{ include(nowo_ui_partial('dialog', page.bundle), {
+            id: 'nowo-api-token-created',
+            title: 'created.title'|trans({}, 'NowoApiTokenBundle'),
+            body: _created,
+            size: 'wide',
+            backdrop_close: false,
+            attr: {'data-testid': 'api-token-created-dialog'},
+        }, false) }}
+        {{ include('@NowoUiKitBundle/partials/_open_modal_on_load.html.twig', {modal: 'nowo-api-token-created', param: false}, false) }}
+    {% endif %}
+{% endblock %}
+
+{#- `secret-once` on every load: it also upgrades the one-time secret of the *New token* remote dialog fragment. -#}
+{% block nowo_ui_scripts %}
+    {{ include(nowo_ui_partial('scripts', page.bundle), {script_names: nowo_ui_script_names()|merge(['secret-once', 'open-modal'])}, false) }}
+{% endblock %}

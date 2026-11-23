@@ -1,0 +1,5 @@
+# API Token Bundle pages (S3): the account pages (web_ui) and the operator page (admin_ui). Nothing is loaded while
+# both are disabled. Protect admin_ui.path_prefix with access_control (see docs/INSTALLATION.md).
+nowo_api_token:
+    resource: .
+    type: nowo_api_token

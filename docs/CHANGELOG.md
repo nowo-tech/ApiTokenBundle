@@ -39,6 +39,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Firewall functional suite for the standard and the DDD host; host-API integration guide in
     [USAGE.md](USAGE.md#protecting-your-own-api).
 
+- S3 account + operator pages (contract 221-A §8, §6.10, `REQ-AUTH-013`, `REQ-UI-002`), registered with
+  `web_ui.enabled` / `admin_ui.enabled` and loaded by the route import `type: nowo_api_token`:
+  - Account → Security → API tokens (`web_ui.path_prefix`, `IS_AUTHENTICATED_FULLY`): UiKit list (name, handle
+    `nwt_k7m2…`, module levels, *agents may delete* badge, reach as *everything* or a count, created, last used,
+    expiry with a warning chip within 7 days), *Revoke* (confirm dialog, FormKit CSRF form; another person's token
+    id answers 404), *Revoke all* (re-auth + confirmation tick), *New token* (page or UiKit remote form dialog):
+    re-auth step, name, one select per module offered by the policy, the module flags (MCP *destructive* off by
+    default), reach (*everything* or the places of `ReachProviderInterface`, grouped), expiry from `expiry.choices`
+    within the policy maximum.
+  - The secret is shown once, in the answer of the POST that created it (a dialog opened on load, or the dialog
+    fragment), printed once in the HTML; the form's CSRF token is renewed after the issue, so a reload issues nothing.
+  - Re-auth (`ReauthGateInterface`, default `PasswordReauthGate` on the host's password hasher, `reauth.gate` for
+    SSO hosts): a freshness mark in the session bound to the session id and the owner (`reauth.fresh_seconds`),
+    `reauth.max_attempts` per 15 minutes and session.
+  - `rate_limit.issue_per_owner` on the account page.
+  - Framing headers on every page: `X-Frame-Options: DENY`, an extra `Content-Security-Policy: frame-ancestors 'none'`
+    header (the host's policy is kept), `Cache-Control: no-store, private`, `Referrer-Policy: same-origin`.
+  - Operator page (`admin_ui.path_prefix`): every token, keyset pages, filters by owner key and by lookup id / visible
+    handle / whole token, *Revoke* (reason `operator`, the operator as actor). Access through
+    `ApiTokenAccessCheckerInterface` (`admin_ui.security.access_roles`, `access_checker`, `allow_unauthenticated`
+    for demos) and the per-token `ApiTokenAccessCheckEvent` (`ApiTokenEvents::ACCESS_CHECK`, deny wins), enforced by
+    `ApiTokenAdminGuard` (REQ-UI-002).
+  - `ApiTokenQueryInterface::findByLookupId()`; `ApiTokenRateLimiterInterface::consumeIssue()` / `consumeReauth()`
+    (`RateLimitScope::Issue` / `Reauth`).
+  - Build checks (`UiPass`): Twig, forms, router, SecurityBundle, CSRF and, for the password gate, a password hasher.
+  - Translations ×7 for the pages (`NowoApiTokenBundle` domain) and the constraint messages (`validators` domain);
+    [TEMPLATES.md](TEMPLATES.md); UiKit page contract test; page suite for the standard and the DDD host (own
+    re-auth gate with its own form type); Flex recipe route file.
+
 ### Security
 
 - Audit ZAB-S2-L1 (pre-release, no GHSA): `ApiTokenFirewallAuthenticator::supports()` claimed every `Authorization`
@@ -60,10 +89,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   unconditionally on `kernel.request` (priority 512, main requests only, before any firewall, never reading it).
 - The window between a revocation and requests already past authentication is documented in
   [CONCURRENCY.md](CONCURRENCY.md#residual-risks) (audit ZAB-S2-I4).
+- Audit ZAB-S3-M1 (pre-release, no GHSA): the operator page's lookup filter was a GET form that accepted a whole
+  token, so a pasted secret went into the URL (access and request logs, history) and was echoed into the input. A
+  leaked token is now searched with a POST form with CSRF (`OperatorLookupType`, a password input never printed back,
+  route `nowo_api_token_operator_lookup`) that redirects to `?lookup=<lookup id>`; the GET filter takes a lookup id or
+  a handle only, refuses longer values without echoing them, and the operator table shows the whole lookup id.
+- Audit ZAB-S3-L2 (pre-release, no GHSA): a request signed in with an API token (the host's token firewall covering
+  the pages) could open the account and operator pages and, for example, issue a broader token. Both refuse it now
+  (`ApiTokenContext::signedInWithToken()`).
+- Audit ZAB-S3-I1: the operator page requires `IS_AUTHENTICATED_FULLY` (no remember-me), like the account page.
+- Audit ZAB-S3-I5: a re-auth mark that expires while the form is checked asks for the re-auth again (422) instead of
+  failing with a 500.
+- Audit ZAB-R-I1: SECURITY.md and USAGE.md tell hosts that log request bodies to mask `nowo_api_token_lookup[token]`
+  and the re-auth password (HttpLogBundle `redaction.query_params` snippet).
+- Audit ZAB-S3-L1 (owner decision 2026-11-23): the one-time secret uses UiKit 2.69's `secret_once` partial and
+  `secret-once` runtime (requires `nowo-tech/ui-kit-bundle` ^2.69): printed exactly once as the text of one element,
+  masked with *Show* / *Copy*, wiped on hide, when the dialog closes and on `pagehide`; the account list loads the
+  runtime on every visit so the remote dialog fragment is upgraded too. TEMPLATES.md: overrides and the Turbo
+  `turbo-cache-control` meta. `make test-e2e` (Playwright on the rendered pages).
+- Documented: the operator page is not tenant-scoped (SECURITY, USAGE, CONFIGURATION), the *New token* double submit
+  and *Revoke all* versus a concurrent issue (CONCURRENCY), and that 0.4.0 adopts UiKit's *secret once* reveal / copy
+  mode before its tag (contract §6.1 / §8.1, ROADMAP; audit ZAB-S3-L1).
 
 ### Changed
 
 - Requires `symfony/security-http`, `symfony/http-foundation` and `symfony/rate-limiter` (^7.4 || ^8.0) at runtime.
+- Requires (S3) `nowo-tech/ui-kit-bundle` ^2.68, `nowo-tech/form-kit-bundle` ^2.24, `symfony/form`, `symfony/validator`,
+  `symfony/security-csrf`, `symfony/password-hasher`, `symfony/routing`, `symfony/translation-contracts`, `twig/twig`,
+  `twig/extra-bundle` and `twig/string-extra` ^3.12 (REQ-TWIG-004).
 - `ApiTokenAuthenticator` takes an optional `ReachFilterChain` (last constructor argument).
 
 - Demo: runs in UiKit's demo platform shell (`nowo-tech/ui-kit-bundle` ^2.60); the demo's own header is gone and the pages use the shell page headers and section cards. Demo only, no bundle change.

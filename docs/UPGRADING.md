@@ -38,6 +38,18 @@ composer update nowo-tech/api-token-bundle
 - Hosts that construct `ApiTokenAuthenticator` themselves may pass a `ReachFilterChain` as the new last argument;
   without it no reach filter runs.
 
+S3 account + operator pages (same unreleased minor):
+
+- **New runtime dependencies**: `nowo-tech/ui-kit-bundle`, `nowo-tech/form-kit-bundle`, `symfony/form`,
+  `symfony/validator`, `symfony/security-csrf`, `symfony/password-hasher`, `symfony/routing`, `twig/twig`. The pages
+  stay off (`web_ui.enabled` / `admin_ui.enabled: false`); register UiKitBundle and FormKitBundle when you enable them.
+- **Routes**: import `{ resource: ., type: nowo_api_token }` (the Flex recipe adds `config/routes/nowo_api_token.yaml`)
+  and add `access_control` for `admin_ui.path_prefix` ([INSTALLATION.md](INSTALLATION.md#pages-s3)).
+- **Custom implementations** of the ports gain methods: `ApiTokenQueryInterface::findByLookupId()`,
+  `ApiTokenRateLimiterInterface::consumeIssue()` and `consumeReauth()`.
+- SSO-only hosts (no password) set `reauth.gate` to a `ReauthGateInterface` service, or the account pages refuse to
+  build when no password hasher exists.
+
 ## To 0.2.0
 
 From **0.1.0**:

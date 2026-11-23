@@ -28,7 +28,7 @@
 
 # Contract 221-A: personal API tokens (ApiTokenBundle). Contract v0.1 for symfony-beacon and the matrix apps
 
-Status 2026-11-23: **v0.2 contract; implementation in progress (2026-11-23).** Owner Q-O and Beacon Q-B answered as recommended (2026-11-12). Slice S1 released as `v0.1.0`, `v0.2.0` is the concurrency release; S2 in PR #12, S3 to S5 not started. See [ROADMAP.md](ROADMAP.md).
+Status 2026-11-23: **v0.2 contract; implementation in progress (2026-11-23).** Owner Q-O and Beacon Q-B answered as recommended (2026-11-12). Slice S1 released as `v0.1.0`, `v0.2.0` is the concurrency release; S2 in PR #12, S3 in PR #13, S4 and S5 not started. See [ROADMAP.md](ROADMAP.md).
 The original status line was: design only, no code, no repository, no PR, no tag. v0.2 = review pass after the account switch (see "Review notes v0.2" at the end); sibling contracts:
 `NOTIFY-KIT-CONTRACT.md` (221-B) and `REPORT-KIT-CONTRACT.md` (221-C) in this folder. The owner approved the extraction on 2026-11-11 (Beacon request
 `docs/ops/BUNDLES-REQUESTS/2026-11-11-reaudit-extraction-candidates.md`, item 1).
@@ -44,7 +44,7 @@ Read for this contract (2026-11-11):
 | TimeTrackBundle | v1.18.0 | `Entity/ClientToken` (its own hashed client session tokens), `Client/*` hooks |
 | AuthKitBundle | v1.43.0 | no API token, no re-auth port, no account-security extension point; owner keys `user_type`/`user_id` |
 | UserKitBundle | v1.14.1 | `PersonalData/*` (eraser, export provider, tags), `Sessions/UserSessionsInterface`, `UserSessionsRevokedEvent` |
-| UiKitBundle | v2.47.0 | `_dialog`, `_open_modal_on_load`, Stimulus `temporary-reveal` + `clipboard-copy`, `View\ListPage`/`Table`/`SettingsPage` |
+| UiKitBundle | v2.69.0 | `_dialog`, `_open_modal_on_load`, `secret_once` partial + `secret-once` runtime (2.69), `View\ListPage`/`Table`/`SettingsPage` |
 | HttpLogBundle | v1.16.3 | `HttpLogRequestContextResolverInterface`, `HttpLogRequestContext`, `HttpLogUsageReaderInterface`, `HttpLogUsageEraserInterface` |
 | AuditKitBundle | v1.13.0 | `ActionLogRecorderInterface` |
 | Rules | 2026-11-11 | `BUNDLES_FIX_RULES.md` (architecture bar 1–8, worker mode, binary collation LQ, versioned API paths, new-bundle bar), `BUNDLES_FULL_SPECS_DETAILS.md`, app REQs `REQ-API-001…003`, `REQ-AUTH-013`, `REQ-ENCRYPT-002`, `REQ-SESSION-004`, `REQ-DATA-001…004` in `OTHER_FULL_SPECS_DETAILS.md` |
@@ -395,8 +395,11 @@ bt_     k7m2q9x4ab3c _ 43 chars base64url (32 random bytes)   + 6 chars base62 C
   - The secret exists only in `IssuedToken`, which goes into the POST response that created it. It is never put in a
     flash, the session, a log, an event, an exception message or the cache.
   - The page sends `Cache-Control: no-store` (and `private`).
-  - The dialog uses UiKit `temporary-reveal` with `clearOnHide` and `clipboard-copy`, so the plaintext leaves the DOM
-    when the person closes it (`REQ-ENCRYPT-002` UX).
+  - The dialog uses UiKit's `secret_once` partial and `secret-once` runtime (UiKit ≥ 2.69; owner decision 2026-11-23,
+    audit ZAB-S3-L1, resolved in 0.4.0): the secret is printed exactly once, as the text of one element (never in an
+    attribute or a second copy), masked with *Show* / *Copy* controls, and wiped in place when it is hidden
+    (`clear_on_hide`), when the dialog closes and on `pagehide`, so the plaintext leaves the DOM (`REQ-ENCRYPT-002`
+    UX). The page and the remote dialog fragment both send `Cache-Control: no-store, private`.
   - A reload shows the list only. A lost secret means a new token.
 
 ### 6.2 Verification (constant time, order fixed)
@@ -667,7 +670,7 @@ The page uses a UiKit `ListPage` scaffold with a settings intro. Its contents:
   - reach: *everything* or chosen places, with a searchable checklist and groups from `ReachChoice::$group`;
   - expiry choice.
 - **After create:** the response re-renders the page with `_open_modal_on_load` showing the secret once. The dialog
-  uses `temporary-reveal` (clearOnHide), `clipboard-copy`, the text "This is the only time you will see it", and
+  uses UiKit's `secret_once` (clear on hide, wiped on dialog close and `pagehide`, see §6.1), the text "This is the only time you will see it", and
   example `curl` lines with a `$TOKEN` placeholder (never the secret pasted into the example).
 - The empty state explains what a token is.
 - Every template can be overridden (`web_ui.templates.*`, REQ-TWIG-001). `docs/TEMPLATES.md` documents them. A
@@ -675,9 +678,20 @@ The page uses a UiKit `ListPage` scaffold with a settings intro. Its contents:
 
 ### 8.2 Operator page
 
-`admin_ui.path_prefix`: keyset-paginated table (owner, name, lookup id, modules, created, expires, last used), a
-filter by owner key and by lookup id (an operator can find a token reported as leaked from its visible prefix), and
-*Revoke*. There is no *issue on behalf* in v1.
+`admin_ui.path_prefix`: keyset-paginated table (owner, name, the whole handle `<prefix><lookup id>`, modules,
+created, expires, last used), a GET filter by owner key and by lookup id or handle, and *Revoke*. There is no *issue on
+behalf* in v1.
+
+- **Leaked token search** (audit ZAB-S3-M1): a whole token is never accepted in a URL. The operator pastes it into a
+  POST form with CSRF (a password input that is never printed back); the server reads only its lookup id and redirects
+  to `?lookup=<lookup id>`. The GET filter refuses any value longer than a handle: it matches nothing and is not
+  echoed. The table shows the whole lookup id, so operators match a reported token without pasting it.
+- **Access:** a full sign-in (`IS_AUTHENTICATED_FULLY`, no remember-me), never a request signed in with an API token
+  (the account pages refuse those too, audit ZAB-S3-L2), then `access_roles` / `access_checker` and the per-token
+  `ApiTokenAccessCheckEvent`.
+- **Not tenant-scoped:** the page lists every token of the application. A multi-tenant host (Beacon) restricts it to
+  super-admins through `admin_ui.security.access_checker`, or narrows actions with an `ApiTokenAccessCheckEvent`
+  listener.
 
 ### 8.3 Translations
 

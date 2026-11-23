@@ -19,7 +19,7 @@ adopts only 1.0.0 in production (Q-O6).
 | **S0** scaffold | `main`, no tag | Composer, Docker, Makefile + release-check, CI matrix, PHPStan + worker rulesets, Igor, Rector, CS, coverage gate, Spec Kit baseline, docs set, `.github`, release / sync workflows, Flex recipe, demo skeleton (FrankenPHP worker, MySQL), threat model, strict config tree `enabled: false`. **Then the owner registers the package on Packagist** | Batched (no runtime code) | Released (on `main`, packaged in v0.1.0) |
 | **S1** core | 0.1.0 | Domain + XML mapping (+ attribute twin, Q-O11) + ID mode + table prefix, `DbalApiTokenStore`, format / hash / checksum, issuer, revoker, query, authenticator service, module registry, `Grants`, `Reach`, `OwnerRef` and the other value objects, owner resolver / status defaults, events after commit, purge command, CLI `nowo:api-token:issue` | **Immediate** | Released (v0.1.0, 2026-11-11, audit LW) |
 | **S2** firewall + limits | 0.3.0 | `ApiTokenFirewallAuthenticator`, request stamp, `on_failure`, stateless check, rate limiters, failed-IP limiter, `ReachFilterInterface` chain, host-API docs | **Immediate** | PR #12 (`feat/s2-firewall-limits`), CI green, audit pending |
-| **S3** account + operator UI | 0.4.0 | Account page, *New token* dialog, re-auth gate + framing headers, revoke / revoke all, operator page, translations ×7, templates doc | **Immediate** | Not started |
+| **S3** account + operator UI | 0.4.0 | Account page, *New token* dialog, re-auth gate + framing headers, revoke / revoke all, operator page, translations ×7, templates doc | **Immediate** | PR #13 (`feat/s3-account-operator-ui`, stacked on #12); audit ZAB fixes applied (M1 POST search, L2, I1, I5), delta re-audit pending; UiKit 2.69 `secret_once` adopted (ZAB-S3-L1 resolved: one DOM node, wiped on hide, dialog close and `pagehide`; `make test-e2e`); demo + Playwright e2e follow-up |
 | **S4** bridges | 0.5.0 | TaskBoard, Wiki, McpKit bridges, HttpLog resolver + usage reader, UserKit eraser + export + sessions listener, AuditKit recorder, AuthKit re-auth adapter, AppTokenSource adapter | **Immediate** | Not started |
 | **S5** public API + 1.0 | 0.6.0 → **1.0.0** | `<prefix>/tokens/v1/self` GET / DELETE, optional revocation endpoint, OpenAPI, legacy Beacon v1 path + `legacy-report`, `ApiTokenExpiringEvent` + command, `PurgeExpiredApiTokensMessage` + handler + schedule (the purge command enqueues by default, `--sync` for direct runs), docs, `bundle-req-audit` 100 % | **Immediate**, then 1.0.0 | Not started |
 | Beacon | after 1.0.0 | Migration (contract §9), `security.yaml`, delete ≈ 1,600 lines | Beacon's own | Waiting for 1.0.0 (Beacon adopts after S3 and 1.0.0, Q-O6) |
@@ -37,7 +37,7 @@ take the next free `0.x` tag (`0.3.0` and up), one per slice after its audit, an
 
 What is left:
 
-- **Slices S2 to S5** (S2 in PR #12, the rest not started): firewall authenticator and limits, account and operator UI, bridges, public API
+- **Slices S2 to S5** (S2 in PR #12, S3 in PR #13, S4 and S5 not started): firewall authenticator and limits, account and operator UI, bridges, public API
   (`<prefix>/tokens/v1`), expiring event, purge message and schedule, OpenAPI. S2 to S5 are authentication slices: each
   needs an **immediate** REQ-SEC-004 audit before the tag that contains it (batch-audit rule 2026-11-07).
 - **REQ gaps:** none open for what is built (latest regrade 2026-11-18b: 111 ok / 1 warn / 0 fail; the warn was

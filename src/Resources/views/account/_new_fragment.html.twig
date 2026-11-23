@@ -1,0 +1,11 @@
+{#
+  *New token* form inside the UiKit remote form dialog (X-Nowo-Dialog request). Variable: page (UiKit FormPage).
+#}
+{%- set _b = page.bundle -%}
+{{ form_start(page.form, {attr: {class: nowo_ui_class('form', _b), 'data-testid': 'api-token-new-form'}}) }}
+    <div data-testid="api-token-form-errors">{{ form_errors(page.form) }}</div>
+    {{ form_widget(page.form) }}
+    <div class="{{ nowo_ui_class('form_actions', _b) }}" data-nowo-ui-dialog-actions>
+        <button type="submit" class="{{ nowo_ui_class('btn_primary', _b) }}">{{ page.submitLabel|nowo_ui_trans }}</button>
+    </div>
+{{ form_end(page.form) }}

@@ -1,0 +1,7 @@
+# fr: constraint messages of the bundle forms (validators domain, same keys in the seven locales).
+"nowo_api_token.name.blank": "Donnez un nom au jeton."
+"nowo_api_token.name.too_long": "Utilisez au plus {{ limit }} caractères."
+"nowo_api_token.reach.blank": "Choisissez où le jeton fonctionne."
+"nowo_api_token.revoke_all.confirm": "Cochez la case pour confirmer."
+"nowo_api_token.lookup.blank": "Collez un jeton, un identifiant visible ou un identifiant de recherche."
+"nowo_api_token.lookup.invalid": "Ce n'est ni un jeton, ni un identifiant visible, ni un identifiant de recherche de cette application."
