@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
 ### Added
 
 - S2 firewall + limits (contract 221-A §6.3, §6.5, §6.7), registered with `enabled: true`:
@@ -66,6 +68,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Demo: runs in UiKit's demo platform shell (`nowo-tech/ui-kit-bundle` ^2.60); the demo's own header is gone and the pages use the shell page headers and section cards. Demo only, no bundle change.
 - Requires `nowo-tech/transaction-doctrine` ^1.8.1 (fixes GHSA-9wh3-m3m5-jffx and GHSA-65w2-9r4h-848g).
+
+[0.3.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.3.0
 
 ## [0.2.0] - 2026-11-18
 
@@ -148,5 +152,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `Grants` keeps modules in key order, so a stored grant reads back identically on MySQL (which reorders JSON keys), PostgreSQL and SQLite.
   - Runtime dependencies: `doctrine/dbal` ^4, `doctrine/orm` ^3.3, `symfony/{clock,console,event-dispatcher,security-core,uid}`, `psr/{clock,event-dispatcher,log}`. DoctrineBundle is required at runtime once enabled.
 
-[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.3.0...HEAD
 [0.1.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.1.0
