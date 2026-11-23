@@ -237,6 +237,10 @@ dispatches nothing.
 
 Enable `web_ui` and/or `admin_ui` and import the routes ([INSTALLATION.md](INSTALLATION.md#pages-s3)).
 
+If your application stores request bodies (HttpLogBundle, a profiler, an APM), mask the fields
+`nowo_api_token_lookup[token]` and `…[reauth_password]`: see [SECURITY.md](SECURITY.md#logging) for the HttpLogBundle
+`redaction.query_params` snippet.
+
 - **Account → Security → API tokens** (`/account/security/api-tokens`): the signed-in person's tokens, *New token*,
   *Revoke* and *Revoke all*. *New token* and *Revoke all* ask for a fresh re-auth (the password by default) once per
   session every `reauth.fresh_seconds`. The secret is shown once, right after the create; a reload shows the list only.

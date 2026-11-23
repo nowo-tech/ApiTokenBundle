@@ -119,6 +119,27 @@ class). A damaged row is logged with the validation message, which names the pat
 
 Never logged: the secret, the presented value, the hash, the pepper, reach entries, raw IP addresses.
 
+**Request bodies logged by the host** (audit ZAB-R-I1): two page forms carry secrets in their POST body, the operator
+search `nowo_api_token_lookup[token]` (a whole leaked token) and the re-auth password
+`nowo_api_token[reauth_password]` / `nowo_api_token_revoke_all[reauth_password]`. The bundle never logs them, but a host
+that stores request bodies (nowo-tech/http-log-bundle, the Symfony profiler, an APM or proxy body log) must mask these
+fields. HttpLogBundle redacts form fields whose name has a segment listed in `redaction.query_params`; its defaults
+already list `token` and `password`, so keep them (and add `reauth_password`) when you replace the list:
+
+```yaml
+# config/packages/nowo_http_log.yaml — the defaults already contain `token` and `password`; keep them when you set
+# your own list (a form field matches when any segment of `a[b][c]` is listed).
+nowo_http_log:
+    redaction:
+        query_params:
+            - token             # nowo_api_token_lookup[token]: the operator search
+            - reauth_password   # nowo_api_token[reauth_password], nowo_api_token_revoke_all[reauth_password]
+            - password
+            - _token
+```
+
+Never enable the Symfony profiler in production; it keeps request bodies.
+
 `ApiTokenAuthFailedEvent` carries the failure kind, the lookup id only when the token exists (`WrongSecret`,
 `Expired`, `OwnerInactive`), a 16-character HMAC of the client IP and the route name (never the query string).
 

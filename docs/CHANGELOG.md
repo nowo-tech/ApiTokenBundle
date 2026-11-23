@@ -98,6 +98,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Audit ZAB-S3-I1: the operator page requires `IS_AUTHENTICATED_FULLY` (no remember-me), like the account page.
 - Audit ZAB-S3-I5: a re-auth mark that expires while the form is checked asks for the re-auth again (422) instead of
   failing with a 500.
+- Audit ZAB-R-I1: SECURITY.md and USAGE.md tell hosts that log request bodies to mask `nowo_api_token_lookup[token]`
+  and the re-auth password (HttpLogBundle `redaction.query_params` snippet).
 - Documented: the operator page is not tenant-scoped (SECURITY, USAGE, CONFIGURATION), the *New token* double submit
   and *Revoke all* versus a concurrent issue (CONCURRENCY), and that 0.4.0 adopts UiKit's *secret once* reveal / copy
   mode before its tag (contract §6.1 / §8.1, ROADMAP; audit ZAB-S3-L1).
