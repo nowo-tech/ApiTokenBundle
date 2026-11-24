@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\ApiTokenBundle\Tests\Unit\DependencyInjection;
 
 use Nowo\ApiTokenBundle\Application\Default\ConfigApiTokenPolicy;
+use Nowo\ApiTokenBundle\Application\Service\ApiTokenIssuer;
 use Nowo\ApiTokenBundle\Contract\ApiTokenPolicyInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenSettingsProviderInterface;
 use Nowo\ApiTokenBundle\Contract\ModuleDefinitionProviderInterface;
@@ -13,7 +14,9 @@ use Nowo\ApiTokenBundle\Contract\OwnerStatusInterface;
 use Nowo\ApiTokenBundle\Contract\ReachProviderInterface;
 use Nowo\ApiTokenBundle\Contract\TokenRevocationListenerInterface;
 use Nowo\ApiTokenBundle\DependencyInjection\NowoApiTokenExtension;
+use Nowo\ApiTokenBundle\Domain\IdGeneratorInterface;
 use Nowo\ApiTokenBundle\Infrastructure\Http\ApiTokenConflictListener;
+use Nowo\ApiTokenBundle\Infrastructure\Identity\UuidV7IdGenerator;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\DbalApiTokenStore;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -88,6 +91,9 @@ final class ExtensionTest extends TestCase
         self::assertSame('app.settings', (string) $container->getAlias(ApiTokenSettingsProviderInterface::class));
         self::assertSame(ConfigApiTokenPolicy::class, (string) $container->getAlias(ApiTokenPolicyInterface::class));
         self::assertTrue($container->getAlias(ApiTokenPolicyInterface::class)->isPublic());
+        self::assertSame('nowo_api_token.id_generator', (string) $container->getAlias(IdGeneratorInterface::class), 'token ids come from the symfony/uid adapter (REQ-ARCH-002 port)');
+        self::assertSame(UuidV7IdGenerator::class, $container->getDefinition('nowo_api_token.id_generator')->getClass());
+        self::assertSame(IdGeneratorInterface::class, (string) $container->getDefinition(ApiTokenIssuer::class)->getArgument(15));
         self::assertArrayHasKey(TokenRevocationListenerInterface::class, $container->getAutoconfiguredInstanceof());
         self::assertArrayHasKey(ModuleDefinitionProviderInterface::class, $container->getAutoconfiguredInstanceof());
     }

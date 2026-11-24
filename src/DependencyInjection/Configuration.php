@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\ApiTokenBundle\DependencyInjection;
 
+use Nowo\ApiTokenBundle\Domain\ApiTokenLimits;
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
@@ -26,10 +27,10 @@ final class Configuration implements ConfigurationInterface
     public const KEY_PATTERN = '/^[a-z][a-z0-9_]{0,31}$/';
 
     /** Tokens always expire (Q-O5): hosts may lower the maximum, never lift it. */
-    public const MAX_TTL_DAYS = 365;
+    public const MAX_TTL_DAYS = ApiTokenLimits::MAX_TTL_DAYS;
 
     /** Upper bound of `max_per_owner`. */
-    public const MAX_PER_OWNER_CAP = 1000;
+    public const MAX_PER_OWNER_CAP = ApiTokenLimits::MAX_PER_OWNER_CAP;
 
     /**
      * The `nowo_api_token` tree.

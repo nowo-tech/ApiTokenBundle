@@ -7,7 +7,7 @@ namespace Nowo\ApiTokenBundle\Presentation\View;
 use Closure;
 use DateTimeImmutable;
 use Nowo\ApiTokenBundle\Contract\ApiTokenView;
-use Nowo\ApiTokenBundle\NowoApiTokenBundle;
+use Nowo\ApiTokenBundle\Contract\TranslationDomain;
 use Nowo\UiKitBundle\View\Action;
 use Nowo\UiKitBundle\View\Column;
 use Nowo\UiKitBundle\View\Confirm;
@@ -28,7 +28,7 @@ use function substr;
 final readonly class AccountPages
 {
     /** Translation domain of every label. */
-    public const DOMAIN = NowoApiTokenBundle::TRANSLATION_DOMAIN;
+    public const DOMAIN = TranslationDomain::NAME;
 
     /** Bundle name for per-bundle theme exceptions. */
     public const BUNDLE = 'NowoApiTokenBundle';

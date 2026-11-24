@@ -15,6 +15,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Internal
+
+- **Deptrac layer check** (REQ-ARCH-002): `deptrac.yaml` with a strict ruleset (Domain / Application framework-free,
+  uncovered dependencies and unassigned classes fail; one skipped entry, the conflict exception built on
+  transaction-doctrine), `composer deptrac`, `make deptrac`, part of `make release-check` and of the PHPStan CI job.
+- Layer fixes, behaviour unchanged: token ids through the new `Domain\IdGeneratorInterface` port (symfony/uid adapter
+  wired by the container; new optional last argument of `ApiTokenIssuer`), `Application\Clock\SystemClock` instead of
+  Symfony's `NativeClock` as the fallback clock, `Contract\TranslationDomain` and `Domain\ApiTokenLimits` (re-exported by
+  `NowoApiTokenBundle::TRANSLATION_DOMAIN` and `Configuration::MAX_TTL_DAYS` / `MAX_PER_OWNER_CAP`).
+
 ## [0.4.0] - 2026-11-23
 
 ### Added

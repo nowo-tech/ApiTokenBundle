@@ -6,6 +6,8 @@ namespace Nowo\ApiTokenBundle\Application\Service;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Nowo\ApiTokenBundle\Application\Clock\SystemClock;
+use Nowo\ApiTokenBundle\Application\Identity\RandomIdGenerator;
 use Nowo\ApiTokenBundle\Application\Token\TokenCodec;
 use Nowo\ApiTokenBundle\Application\Token\TokenHasherInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenIssuerInterface;
@@ -21,14 +23,13 @@ use Nowo\ApiTokenBundle\Contract\ModuleRegistry;
 use Nowo\ApiTokenBundle\Contract\OwnerResolverInterface;
 use Nowo\ApiTokenBundle\Contract\OwnerStatusInterface;
 use Nowo\ApiTokenBundle\Contract\ReachProviderInterface;
-use Nowo\ApiTokenBundle\DependencyInjection\Configuration;
 use Nowo\ApiTokenBundle\Domain\ApiToken;
+use Nowo\ApiTokenBundle\Domain\ApiTokenLimits;
 use Nowo\ApiTokenBundle\Domain\ApiTokenStoreInterface;
+use Nowo\ApiTokenBundle\Domain\IdGeneratorInterface;
 use Nowo\ApiTokenBundle\Domain\LookupIdTakenException;
 use Psr\Clock\ClockInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
-use Symfony\Component\Clock\NativeClock;
-use Symfony\Component\Uid\Uuid;
 
 use function count;
 use function in_array;
@@ -53,6 +54,8 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
 
     private ClockInterface $clock;
 
+    private IdGeneratorInterface $ids;
+
     /**
      * Wires the issuer.
      */
@@ -68,12 +71,14 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
         private OwnerStatusInterface $ownerStatus,
         private EventDispatcherInterface $dispatcher,
         private int $maxPerOwner = 20,
-        private int $maxDays = Configuration::MAX_TTL_DAYS,
+        private int $maxDays = ApiTokenLimits::MAX_TTL_DAYS,
         private bool $allowEverything = true,
         private int $maxReachEntries = 200,
         ?ClockInterface $clock = null,
+        ?IdGeneratorInterface $ids = null,
     ) {
-        $this->clock = $clock ?? new NativeClock();
+        $this->clock = $clock ?? new SystemClock();
+        $this->ids   = $ids ?? new RandomIdGenerator();
     }
 
     /**
@@ -107,7 +112,7 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
         }
         $this->assertReach($request);
 
-        $maxDays = min($this->maxDays, $this->policy->maxTtlDays($owner), Configuration::MAX_TTL_DAYS);
+        $maxDays = min($this->maxDays, $this->policy->maxTtlDays($owner), ApiTokenLimits::MAX_TTL_DAYS);
         if ($request->expiresInDays < 1 || $request->expiresInDays > $maxDays) {
             throw new ApiTokenIssueRefusedException(ApiTokenIssueRefusedException::EXPIRY, sprintf('The expiry must be between 1 and %d days.', $maxDays));
         }
@@ -121,7 +126,7 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
         for ($attempt = 1;; ++$attempt) {
             $generated = $this->codec->generate();
             $token     = new ApiToken(
-                Uuid::v7()->toRfc4122(),
+                $this->ids->next(),
                 $generated->lookupId->value,
                 $this->hasher->hash($generated->token()),
                 $this->hasher->currentVersion(),
@@ -146,7 +151,7 @@ final readonly class ApiTokenIssuer implements ApiTokenIssuerInterface
                         if ($this->store->countLive($owner, $now) >= $this->maxPerOwner) {
                             throw new ApiTokenIssueRefusedException(ApiTokenIssueRefusedException::TOO_MANY, sprintf('An owner holds at most %d live tokens.', $this->maxPerOwner));
                         }
-                        foreach ($this->store->ofOwner($owner, Configuration::MAX_PER_OWNER_CAP) as $existing) {
+                        foreach ($this->store->ofOwner($owner, ApiTokenLimits::MAX_PER_OWNER_CAP) as $existing) {
                             if ($existing->nameKey() === $token->nameKey()) {
                                 throw new ApiTokenIssueRefusedException(ApiTokenIssueRefusedException::DUPLICATE_NAME, 'Another token of this owner has the same name.');
                             }

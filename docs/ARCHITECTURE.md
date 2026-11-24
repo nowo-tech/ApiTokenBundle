@@ -11,6 +11,7 @@ follow.
 - [S1 contents](#s1-contents)
 - [S2 contents](#s2-contents)
 - [S3 contents](#s3-contents)
+- [Architecture checks](#architecture-checks)
 
 ## Layers
 
@@ -82,3 +83,23 @@ IP, dispatches `ApiTokenAuthFailedEvent` and answers per `firewall.on_failure`.
 
 The controllers only call the public ports (issuer, revoker, query, policy, reach provider, rate limiter): the pages
 add no write path of their own, so the S1 concurrency and after-commit rules hold unchanged.
+
+## Architecture checks
+
+[Deptrac](https://github.com/deptrac/deptrac) checks the dependencies between the layers on every CI run (REQ-ARCH-002; `deptrac.yaml`, `composer deptrac` / `make deptrac`, part of `make release-check` and of the PHPStan CI job). A violation, a dependency on an unlisted vendor namespace or a class under `src/` that belongs to no layer fails the build.
+
+| Deptrac layer | Namespaces | May depend on |
+| --- | --- | --- |
+| `Domain` | `Contract`, `Domain` | itself, `psr/clock`, `psr/log`, `psr/event-dispatcher`, `nowo-tech/transaction-contract` |
+| `Application` | `Application`, plus `Infrastructure\Security\ClientIpHasher` (framework-free HMAC helper shared by the authenticator and the rate limiter) | `Domain` and the same contract packages |
+| `Infrastructure` | `Infrastructure` except `Security` and `Http` | `Domain`, `Application`, Symfony, Doctrine, Twig, transaction-doctrine, UiKit / FormKit |
+| `UI` | `Presentation`, and the HTTP / security edge `Infrastructure\{Security, Http}` (firewall authenticator, admin guard, re-auth session, kernel listeners) | `Domain`, `Application`, Symfony, Twig, transaction-doctrine, UiKit / FormKit |
+| `DependencyInjection` | `DependencyInjection`, the bundle class | every layer (composition root) |
+
+Ports keep the core framework-free: token row ids come from `Domain\IdGeneratorInterface` (the container wires
+`Infrastructure\Identity\UuidV7IdGenerator`; a hand-built issuer falls back to a plain-PHP UUIDv7), the services fall
+back to `Application\Clock\SystemClock` when the host has no `clock` service, the translation domain is
+`Contract\TranslationDomain::NAME` and the hard limits are `Domain\ApiTokenLimits` (the bundle class and
+`Configuration` re-export both with the same values). The only skipped entry is `Contract\Exception\ApiTokenConflictException`,
+built on transaction-doctrine's conflict types (REQ-RUNTIME-003 rule 6); it goes once `nowo-tech/transaction-contract`
+ships framework-free conflict types (REQ-ARCH-002 rule 8).
