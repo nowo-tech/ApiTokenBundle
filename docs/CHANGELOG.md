@@ -8,12 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[0.5.0] - 2026-11-25](#050---2026-11-25)
 - [[0.4.0] - 2026-11-23](#040---2026-11-23)
 - [[0.3.0] - 2026-11-23](#030---2026-11-23)
 - [[0.2.0] - 2026-11-18](#020---2026-11-18)
 - [[0.1.0] - 2026-11-11](#010---2026-11-11)
 
 ## [Unreleased]
+
+## [0.5.0] - 2026-11-25
 
 ### Internal
 
@@ -24,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   wired by the container; new optional last argument of `ApiTokenIssuer`), `Application\Clock\SystemClock` instead of
   Symfony's `NativeClock` as the fallback clock, `Contract\TranslationDomain` and `Domain\ApiTokenLimits` (re-exported by
   `NowoApiTokenBundle::TRANSLATION_DOMAIN` and `Configuration::MAX_TTL_DAYS` / `MAX_PER_OWNER_CAP`).
+
+[0.5.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.5.0
 
 ## [0.4.0] - 2026-11-23
 
@@ -235,5 +240,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `Grants` keeps modules in key order, so a stored grant reads back identically on MySQL (which reorders JSON keys), PostgreSQL and SQLite.
   - Runtime dependencies: `doctrine/dbal` ^4, `doctrine/orm` ^3.3, `symfony/{clock,console,event-dispatcher,security-core,uid}`, `psr/{clock,event-dispatcher,log}`. DoctrineBundle is required at runtime once enabled.
 
-[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/ApiTokenBundle/compare/v0.5.0...HEAD
 [0.1.0]: https://github.com/nowo-tech/ApiTokenBundle/releases/tag/v0.1.0

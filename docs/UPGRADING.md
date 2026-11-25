@@ -3,12 +3,21 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 0.5.0](#to-050)
 - [To 0.4.0](#to-040)
 - [To 0.3.0](#to-030)
 - [To 0.2.0](#to-020)
 - [To 0.1.0](#to-010)
 
 ## Unreleased
+
+## To 0.5.0
+
+From **0.4.0**:
+
+```bash
+composer update nowo-tech/api-token-bundle
+```
 
 ## To 0.4.0
 
