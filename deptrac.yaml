@@ -1,0 +1,136 @@
+# REQ-ARCH-002: layer dependencies of src/ checked by Deptrac (strict ruleset; skipped violations only for public API
+# that cannot change before the next major, each with its reason below).
+# Run: composer deptrac / make deptrac. Layers follow REQ-ARCH-001; docs/ARCHITECTURE.md explains them.
+deptrac:
+  paths:
+    - ./src
+  exclude_files:
+    - '#.*/src/Resources/.*#'
+  layers:
+    # --- Bundle layers -------------------------------------------------------------------------------------------
+    # Domain: the public contract (ports, VOs, events, exceptions in src/Contract) and the domain model (src/Domain).
+    - name: Domain
+      collectors:
+        - type: classLike
+          value: '^Nowo\\ApiTokenBundle\\(Contract|Domain)\\'
+    # Application: use cases, plus ClientIpHasher (Infrastructure\Security, not re-laid out): a framework-free HMAC
+    # helper shared by the firewall authenticator (UI) and the rate limiter adapter (Infrastructure).
+    - name: Application
+      collectors:
+        - type: classLike
+          value: '^Nowo\\ApiTokenBundle\\(Application\\|Infrastructure\\Security\\ClientIpHasher$)'
+    # Infrastructure: Doctrine / DBAL store, owner resolvers, rate limiter, console commands and the port adapters.
+    - name: Infrastructure
+      collectors:
+        - type: bool
+          must:
+            - type: classLike
+              value: '^Nowo\\ApiTokenBundle\\Infrastructure\\'
+          must_not:
+            - type: classLike
+              value: '^Nowo\\ApiTokenBundle\\Infrastructure\\(Security|Http)\\'
+    # UI: controllers, forms, route loaders, view models (src/Presentation) and the HTTP / security edge kept under
+    # Infrastructure (not re-laid out): firewall authenticator, admin guard, re-auth session, kernel listeners.
+    - name: UI
+      collectors:
+        - type: bool
+          must:
+            - type: classLike
+              value: '^Nowo\\ApiTokenBundle\\(Presentation|Infrastructure\\(Security|Http))\\'
+          must_not:
+            - type: classLike
+              value: '^Nowo\\ApiTokenBundle\\Infrastructure\\Security\\ClientIpHasher$'
+    # DependencyInjection: the composition root (bundle class, extension, compiler passes). It wires every layer.
+    - name: DependencyInjection
+      collectors:
+        - type: classLike
+          value: '^Nowo\\ApiTokenBundle\\(DependencyInjection\\|NowoApiTokenBundle$)'
+    # --- Vendor layers -------------------------------------------------------------------------------------------
+    # Framework-free contract packages, listed by name (Domain and Application may use them).
+    - name: Psr
+      collectors:
+        - type: classLike
+          value: '^Psr\\(Clock|Log|EventDispatcher)\\'
+    - name: TransactionContract
+      collectors:
+        - type: classLike
+          value: '^Nowo\\TransactionContract\\'
+    # Framework and library code: Infrastructure, UI and DependencyInjection only.
+    - name: SymfonyContracts
+      collectors:
+        - type: classLike
+          value: '^Symfony\\Contracts\\'
+    - name: Symfony
+      collectors:
+        - type: classLike
+          value: '^Symfony\\(Component|Bundle|Bridge)\\'
+    - name: Doctrine
+      collectors:
+        - type: classLike
+          value: '^Doctrine\\'
+    - name: Twig
+      collectors:
+        - type: classLike
+          value: '^Twig\\'
+    - name: TransactionDoctrine          # NOT framework-free (ConflictCode imports HttpFoundation / Messenger)
+      collectors:
+        - type: classLike
+          value: '^Nowo\\TransactionDoctrine\\'
+    - name: NowoBundles
+      collectors:
+        - type: classLike
+          value: '^Nowo\\(UiKitBundle|FormKitBundle)\\'
+  ruleset:
+    Domain:
+      - Psr
+      - TransactionContract
+    Application:
+      - Domain
+      - Psr
+      - TransactionContract
+    Infrastructure:
+      - Domain
+      - Application
+      - Psr
+      - TransactionContract
+      - SymfonyContracts
+      - Symfony
+      - Doctrine
+      - Twig
+      - TransactionDoctrine
+      - NowoBundles
+    UI:
+      - Domain
+      - Application
+      - Psr
+      - TransactionContract
+      - SymfonyContracts
+      - Symfony
+      - Twig
+      - TransactionDoctrine
+      - NowoBundles
+    DependencyInjection:
+      - Domain
+      - Application
+      - Infrastructure
+      - UI
+      - Psr
+      - TransactionContract
+      - SymfonyContracts
+      - Symfony
+      - Doctrine
+      - Twig
+      - TransactionDoctrine
+      - NowoBundles
+  # Legacy public API that cannot change before the next major (REQ-ARCH-002 rules 3 and 8). This list must shrink,
+  # never grow.
+  skip_violations:
+    # Public conflict exception built on transaction-doctrine's types (REQ-RUNTIME-003 rule 6): it implements
+    # LockConflictExceptionInterface and exposes ConflictCode / TransientFailureKind / ConcurrencyConflict. Removed
+    # once nowo-tech/transaction-contract ships the framework-free conflict types (REQ-ARCH-002 rule 8), in 1.0.0 at
+    # the latest.
+    Nowo\ApiTokenBundle\Contract\Exception\ApiTokenConflictException:
+      - Nowo\TransactionDoctrine\ConflictCode
+      - Nowo\TransactionDoctrine\TransientFailureKind
+      - Nowo\TransactionDoctrine\WriteUnit\ConcurrencyConflict
+      - Nowo\TransactionDoctrine\WriteUnit\LockConflictExceptionInterface

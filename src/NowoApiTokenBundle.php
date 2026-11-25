@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\ApiTokenBundle;
 
+use Nowo\ApiTokenBundle\Contract\TranslationDomain;
 use Nowo\ApiTokenBundle\DependencyInjection\Compiler\FirewallPass;
 use Nowo\ApiTokenBundle\DependencyInjection\Compiler\OwnerUserCheckerPass;
 use Nowo\ApiTokenBundle\DependencyInjection\Compiler\RequireDoctrinePass;
@@ -27,7 +28,7 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
 final class NowoApiTokenBundle extends Bundle
 {
     /** Translation domain of the bundle UI copy (REQ-I18N-003) and Twig namespace (REQ-TWIG-002). */
-    public const TRANSLATION_DOMAIN = 'NowoApiTokenBundle';
+    public const TRANSLATION_DOMAIN = TranslationDomain::NAME;
 
     /**
      * Registers the compiler passes.

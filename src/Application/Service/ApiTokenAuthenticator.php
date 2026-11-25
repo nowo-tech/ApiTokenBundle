@@ -6,6 +6,7 @@ namespace Nowo\ApiTokenBundle\Application\Service;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Nowo\ApiTokenBundle\Application\Clock\SystemClock;
 use Nowo\ApiTokenBundle\Application\Token\TokenCodec;
 use Nowo\ApiTokenBundle\Application\Token\TokenHasherInterface;
 use Nowo\ApiTokenBundle\Contract\ApiTokenAuthenticatorInterface;
@@ -24,7 +25,6 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use SensitiveParameter;
-use Symfony\Component\Clock\NativeClock;
 use Throwable;
 
 use function str_repeat;
@@ -70,7 +70,7 @@ final readonly class ApiTokenAuthenticator implements ApiTokenAuthenticatorInter
         private ?LoggerInterface $logger = null,
         private ?ReachFilterChain $reachFilters = null,
     ) {
-        $this->clock = $clock ?? new NativeClock();
+        $this->clock = $clock ?? new SystemClock();
     }
 
     /**

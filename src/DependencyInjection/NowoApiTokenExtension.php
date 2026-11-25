@@ -34,10 +34,12 @@ use Nowo\ApiTokenBundle\Contract\ReachProviderInterface;
 use Nowo\ApiTokenBundle\Contract\ReauthGateInterface;
 use Nowo\ApiTokenBundle\Contract\TokenRevocationListenerInterface;
 use Nowo\ApiTokenBundle\Domain\ApiTokenStoreInterface;
+use Nowo\ApiTokenBundle\Domain\IdGeneratorInterface;
 use Nowo\ApiTokenBundle\Infrastructure\Console\IssueTokenCommand;
 use Nowo\ApiTokenBundle\Infrastructure\Console\PurgeExpiredTokensCommand;
 use Nowo\ApiTokenBundle\Infrastructure\Doctrine\ApiTokenMetadataListener;
 use Nowo\ApiTokenBundle\Infrastructure\Http\ApiTokenConflictListener;
+use Nowo\ApiTokenBundle\Infrastructure\Identity\UuidV7IdGenerator;
 use Nowo\ApiTokenBundle\Infrastructure\Owner\DoctrineOwnerResolver;
 use Nowo\ApiTokenBundle\Infrastructure\Owner\UserCheckerOwnerStatus;
 use Nowo\ApiTokenBundle\Infrastructure\Persistence\AfterCommitMiddleware;
@@ -249,12 +251,14 @@ final class NowoApiTokenExtension extends Extension implements PrependExtensionI
         $this->service($container, OwnerStatusInterface::class, $owner['status'], (new Definition(UserCheckerOwnerStatus::class))->setArguments([[]]));
         $container->setParameter(self::ALIAS . '.owner_status', ['custom' => $owner['status'] !== null, 'user_checker' => $owner['user_checker']]);
 
+        $container->register('nowo_api_token.id_generator', UuidV7IdGenerator::class);
+        $container->setAlias(IdGeneratorInterface::class, 'nowo_api_token.id_generator');
         $store = new Reference(ApiTokenStoreInterface::class);
         $container->register(ApiTokenIssuer::class, ApiTokenIssuer::class)->setArguments([
             $store, new Reference(TokenCodec::class), new Reference(TokenHasherInterface::class), new Reference(ModuleRegistry::class),
             new Reference(ApiTokenPolicyInterface::class), new Reference(ReachProviderInterface::class), new Reference(ApiTokenSettingsProviderInterface::class),
             new Reference(OwnerResolverInterface::class), new Reference(OwnerStatusInterface::class),
-            $dispatcher, $maxPerOwner, $expiry['max_days'], $reach['allow_everything'], $reach['max_entries'], $clock,
+            $dispatcher, $maxPerOwner, $expiry['max_days'], $reach['allow_everything'], $reach['max_entries'], $clock, new Reference(IdGeneratorInterface::class),
         ]);
         $container->setAlias(ApiTokenIssuerInterface::class, ApiTokenIssuer::class)->setPublic(true);
         $container->register(ApiTokenRevoker::class, ApiTokenRevoker::class)
