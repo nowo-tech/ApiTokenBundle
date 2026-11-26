@@ -113,6 +113,8 @@ DBAL only and their listeners and events run after the outermost commit; no stat
 | ID | Requirement |
 | --- | --- |
 | FR-ISSUE-001 | Issue validates the module switch, policy, owner (exists and active), name, channel, grants, reach and expiry (≤ 365 days), enforces the live-token cap and unique names per owner (case-insensitive, unique index) in one transaction, retries a lookup-id collision, returns the secret once. |
+| FR-ID-001 | Row ids come from `IdGeneratorInterface` (`Domain`): `UuidV7IdGenerator` (`symfony/uid` UUIDv7, the wired default) or the dependency-free `RandomIdGenerator` (time-ordered UUIDv7 from `random_bytes`); the issuer and authenticator take a PSR-20 `ClockInterface` and fall back to `SystemClock`, so expiry and *last used* are testable. |
+| FR-LIMIT-001 | `ApiTokenLimits` holds the hard ceilings shared by `Configuration` and the issuer: a token lives at most 365 days (`MAX_TTL_DAYS`) and an owner's live-token cap never exceeds 1000 (`MAX_PER_OWNER_CAP`), whatever the config or policy says. |
 | FR-AUTH-001 | Authenticate in the order: format, checksum, lookup, hash, expiry, module switch, owner resolved and active (every call), grants narrowed; *last used* at most once a minute, outside open transactions. |
 | FR-REVOKE-001 | Revoke (owner-checked exactly), revoke all, operator revoke and purge delete the rows; revocation listeners and the event run after commit; a failing listener never undoes it. |
 | FR-QUERY-001 | Owner lists newest first and capped; operator keyset pages; every owner-scoped result re-checked with `===`. |
@@ -188,7 +190,7 @@ DBAL only and their listeners and events run after the outermost commit; no stat
 | SC-002 | 100 % statement and element coverage of `src/` (`make test-coverage-100`). |
 | SC-003 | The functional suite passes for both host kinds (`StandardHostTest`, `DddHostTest`) on SQLite, MySQL 8.4 and PostgreSQL 17. |
 | SC-004 | The worker test serves 2,000 requests in one kernel with no cross-owner data, ≤ 1 MiB memory drift, and refuses an owner deactivated by SQL on the next request. |
-| SC-005 | [`code-inventory.md`](code-inventory.md) maps **every** file of `src/` (**75** files at this baseline; the count is re-stated there on each slice) to its `FR-*` IDs, with no `FR-SRC-001` placeholder. |
+| SC-005 | [`code-inventory.md`](code-inventory.md) maps **every** file of `src/` (**138** files at 0.5.0; the count is re-stated there on each slice) to its `FR-*` IDs, with no `FR-SRC-001` placeholder. |
 | SC-006 | The S1 REQ-SEC-004 audit (and its delta re-audit) passes before the 0.1.0 tag. |
 | SC-008 | The S3 REQ-SEC-004 audit passes before the 0.4.0 tag; the page suite runs on both host kinds; the UiKit page contract passes. |
 | SC-007 | The S2 REQ-SEC-004 audit passes before the 0.3.0 tag; the firewall suite runs on both host kinds and every CI database. |

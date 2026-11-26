@@ -2,15 +2,17 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/api-token-bundle`  
-**Last audited**: 2026-11-23 (S1 + audit LW fixes, 0.2.0 concurrency, S2 firewall + limits, S3 pages)
+**Last audited**: 2026-11-26 (S1 + audit LW fixes, 0.2.0 concurrency, S2 firewall + limits, S3 pages, 0.5.0 identity ports and limits)
 
-Scope: every file under `src/`. Audit command: `find src -type f | wc -l` → **131**.
+Scope: every file under `src/`. Audit command: `find src -type f | wc -l` → **138**.
 
 | Source file | Spec section | Requirement IDs |
 | --- | --- | --- |
+| `src/Application/Clock/SystemClock.php` | Identity | FR-ID-001 |
 | `src/Application/Default/ConfigApiTokenPolicy.php` | Defaults | FR-ISSUE-001, FR-AUTH-001 |
 | `src/Application/Default/ConfigSettingsProvider.php` | Defaults | FR-ISSUE-001, FR-AUTH-001 |
 | `src/Application/Default/NoReachChoices.php` | Defaults | FR-ISSUE-001, FR-AUTH-001 |
+| `src/Application/Identity/RandomIdGenerator.php` | Identity | FR-ID-001 |
 | `src/Application/ModuleRegistryFactory.php` | Grants | FR-GRANT-001 |
 | `src/Application/Service/ApiTokenAuthenticator.php` | Authenticate | FR-AUTH-001 |
 | `src/Application/Service/ApiTokenIssuer.php` | Issue | FR-ISSUE-001, FR-OWNER-001 |
@@ -64,6 +66,7 @@ Scope: every file under `src/`. Audit command: `find src -type f | wc -l` → **
 | `src/Contract/SensitiveValue.php` | Secrets | FR-SECRET-001 |
 | `src/Contract/TokenId.php` | Ports | FR-PORT-001 |
 | `src/Contract/TokenRevocationListenerInterface.php` | Ports | FR-PORT-001, FR-REVOKE-001 |
+| `src/Contract/TranslationDomain.php` | Translations | FR-I18N-001 |
 | `src/DependencyInjection/Compiler/FirewallPass.php` | Firewall | FR-FIREWALL-002, FR-RATE-001 |
 | `src/DependencyInjection/Compiler/OwnerUserCheckerPass.php` | Configuration | FR-CONFIG-001, FR-OWNER-001 |
 | `src/DependencyInjection/Compiler/RequireDoctrinePass.php` | Configuration | FR-CONFIG-001, FR-HOST-001 |
@@ -72,8 +75,10 @@ Scope: every file under `src/`. Audit command: `find src -type f | wc -l` → **
 | `src/DependencyInjection/Configuration.php` | Configuration | FR-CONFIG-001 |
 | `src/DependencyInjection/NowoApiTokenExtension.php` | Configuration | FR-CONFIG-001, FR-CONFIG-002, FR-DB-002 |
 | `src/Domain/ApiToken.php` | Persistence | FR-STORE-001, FR-HASH-001 |
+| `src/Domain/ApiTokenLimits.php` | Issue | FR-LIMIT-001, FR-ISSUE-001 |
 | `src/Domain/ApiTokenOwnerLock.php` | Concurrency | FR-CONC-001 |
 | `src/Domain/ApiTokenStoreInterface.php` | Persistence | FR-STORE-001, FR-HASH-001 |
+| `src/Domain/IdGeneratorInterface.php` | Identity | FR-ID-001 |
 | `src/Domain/LookupIdTakenException.php` | Persistence | FR-STORE-001, FR-HASH-001 |
 | `src/Infrastructure/Console/IssueTokenCommand.php` | Console | FR-CLI-001 |
 | `src/Infrastructure/Console/PurgeExpiredTokensCommand.php` | Console | FR-CLI-001 |
@@ -81,6 +86,7 @@ Scope: every file under `src/`. Audit command: `find src -type f | wc -l` → **
 | `src/Infrastructure/Doctrine/Entity/ApiTokenOwnerLockRecord.php` | Concurrency | FR-CONC-001, FR-DB-002 |
 | `src/Infrastructure/Doctrine/Entity/ApiTokenRecord.php` | Persistence | FR-DB-001, FR-DB-002 |
 | `src/Infrastructure/Http/ApiTokenConflictListener.php` | Concurrency | FR-CONC-001 |
+| `src/Infrastructure/Identity/UuidV7IdGenerator.php` | Identity | FR-ID-001 |
 | `src/Infrastructure/Owner/DoctrineOwnerResolver.php` | Hosts | FR-HOST-001, FR-OWNER-001 |
 | `src/Infrastructure/Owner/UserCheckerOwnerStatus.php` | Hosts | FR-HOST-001, FR-OWNER-001 |
 | `src/Infrastructure/Persistence/AfterCommitConnection.php` | Persistence | FR-STORE-001, FR-EVENT-001 |
@@ -106,6 +112,7 @@ Scope: every file under `src/`. Audit command: `find src -type f | wc -l` → **
 | `src/Presentation/Form/CsrfActionType.php` | Pages | FR-PAGE-001 |
 | `src/Presentation/Form/NewTokenType.php` | Pages | FR-PAGE-001 |
 | `src/Presentation/Form/OperatorFilterType.php` | Operator page | FR-ADMIN-001 |
+| `src/Presentation/Form/OperatorLookupType.php` | Operator page | FR-ADMIN-001 |
 | `src/Presentation/Form/ReauthFieldTrait.php` | Re-auth | FR-REAUTH-001 |
 | `src/Presentation/Form/RevokeAllType.php` | Pages | FR-PAGE-001 |
 | `src/Presentation/Http/FramingHeadersListener.php` | Pages | FR-PAGE-002 |
@@ -140,5 +147,5 @@ Scope: every file under `src/`. Audit command: `find src -type f | wc -l` → **
 | `src/Resources/views/account/revoke_all.html.twig` | Pages | FR-PAGE-001 |
 | `src/Resources/views/operator/list.html.twig` | Pages | FR-PAGE-001 |
 
-| Total production sources | 131 |
+| Total production sources | 138 |
 | --- | --- |
